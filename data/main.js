@@ -54,6 +54,7 @@ function resetUi() {
     const el = $(id);
     if (el) el.textContent = "--";
   });
+  document.querySelectorAll(".energy-temp-in, .energy-temp-ex").forEach((el) => el.textContent = "--");
   const btn = $("outBtn");
   if (btn) { btn.textContent = "ВКЛ"; btn.className = "btn btn-success"; }
 }
@@ -178,8 +179,13 @@ function renderStatus(s) {
   $("wattHours").textContent = `${fmt(s.wattHours, 3)} Wh`;
   $("outputTime").textContent = fmtTime(s.outputTime);
   $("inputVoltage").textContent = `${fmt(s.inputVoltage)} V`;
-  $("internalTemp").textContent = `${fmt(s.internalTemp, 1)} ${s.tempCelsius ? "°C" : "°F"}`;
-  $("externalTemp").textContent = `${fmt(s.externalTemp, 1)} ${s.tempCelsius ? "°C" : "°F"}`;
+  // Both the live big display and the energy table share temperature values
+  const tIn = `${fmt(s.internalTemp, 1)} ${s.tempCelsius ? "°C" : "°F"}`;
+  const tEx = `${fmt(s.externalTemp, 1)} ${s.tempCelsius ? "°C" : "°F"}`;
+  if ($("internalTemp")) $("internalTemp").textContent = tIn;
+  document.querySelectorAll(".energy-temp-in").forEach((el) => el.textContent = tIn);
+  if ($("externalTemp")) $("externalTemp").textContent = tEx;
+  document.querySelectorAll(".energy-temp-ex").forEach((el) => el.textContent = tEx);
 
   // Protection inputs
   if (editable("pOvp")) $("pOvp").value = fmt(s.ovp);
