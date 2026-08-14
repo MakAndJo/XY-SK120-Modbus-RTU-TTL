@@ -19,6 +19,9 @@ void sendOperatingModeDetails(AsyncWebSocketClient* client);
 // Server-side polling: read fresh PSU status and push it to all connected clients
 void pollAndBroadcastPSUStatus();
 
+// Force the next poll to broadcast even if the status is unchanged (new client)
+void forceStatusBroadcast();
+
 // PSU helper functions
 float getPSUVoltage(XY_SKxxx* powerSupply);
 float getPSUCurrent(XY_SKxxx* powerSupply);

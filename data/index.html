@@ -3,48 +3,50 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>XY-SK120 PSU</title>
+  <title>XY PSU</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header>
-    <h1><span id="deviceName">XY-SK120</span> <span id="conn">·</span></h1>
-    <span id="connText">online</span>
+    <div class="header-row">
+      <h1><span id="deviceName">XY PSU</span> <span id="conn">·</span></h1>
+      <span id="connText">offline</span>
+    </div>
+    <div class="device-bar">
+      <select id="deviceSelect" class="device-select"></select>
+      <button id="devAddBtn" class="btn btn-sm btn-primary">+</button>
+      <button id="devDelBtn" class="btn btn-sm btn-ghost" title="Удалить устройство">✕</button>
+    </div>
+    <div id="addForm" class="hidden">
+      <input id="newName" type="text" placeholder="Имя (PSU)">
+      <input id="newIp" type="text" placeholder="192.168.1.100">
+      <button id="addOk" class="btn btn-sm btn-primary">OK</button>
+      <button id="addCancel" class="btn btn-sm btn-ghost">Нет</button>
+    </div>
   </header>
 
-  <main>
+  <!-- Tab: Главная -->
+  <main id="page-main" class="tabpage">
     <section class="card" id="live">
       <div class="row big">
         <div class="val"><label>V</label><output id="voltage">--</output></div>
         <div class="val"><label>A</label><output id="current">--</output></div>
         <div class="val"><label>W</label><output id="power">--</output></div>
+        <div class="val"><label>М</label><output id="mode">--</output></div>
       </div>
-      <div class="row">
-        <span class="badge" id="mode">--</span>
-        <span id="modeName">--</span>
-        <span id="inputVoltage" style="margin-left:auto"></span>
-        <span id="setValue"></span>
-      </div>
-    </section>
-
-    <section class="card">
-      <div class="row">
+      <div class="row live-controls">
+        <button id="clearProtBtn" class="btn btn-sm btn-danger hidden">Сброс</button>
+        <button id="keyLock" class="btn btn-sm btn-warning" style="margin-left:auto">🔒</button>
         <button id="outBtn" class="btn btn-success">ВКЛ</button>
-        <button id="keyLock" class="btn btn-sm btn-ghost">Замок выкл</button>
-        <span class="badge" id="protStatus" style="margin-left:auto" title="Статус защиты">--</span>
       </div>
     </section>
 
     <section class="card">
-      <h2>Уставки</h2>
+      <h2>Установка</h2>
       <div class="row">
         <input id="vIn" type="number" step="0.01" min="0" max="150" placeholder="V">
-        <button id="vSetBtn" class="btn btn-sm btn-primary">V</button>
-      </div>
-      <div class="row">
         <input id="iIn" type="number" step="0.001" min="0" max="65" placeholder="A">
-        <button id="iSetBtn" class="btn btn-sm btn-primary">A</button>
       </div>
     </section>
 
@@ -54,13 +56,17 @@
         <tr><td>Заряд (Ah)</td><td id="ampHours">--</td></tr>
         <tr><td>Энергия (Wh)</td><td id="wattHours">--</td></tr>
         <tr><td>Время работы</td><td id="outputTime">--</td></tr>
+        <tr><td>Вход (Uin)</td><td id="inputVoltage">--</td></tr>
         <tr><td>Темп. внутр.</td><td id="internalTemp">--</td></tr>
         <tr><td>Темп. внешн.</td><td id="externalTemp">--</td></tr>
       </table>
     </section>
+  </main>
 
+  <!-- Tab: Защита -->
+  <main id="page-prot" class="tabpage hidden">
     <section class="card" id="protCard">
-      <h2>Защита</h2>
+      <h2>Профиль и защита</h2>
       <table class="editable">
         <tr><td>OVP</td><td class="ctrl"><input id="pOvp" type="number" step="0.01" min="0"><button class="btn btn-sm btn-primary" data-action="ovp">ok</button></td></tr>
         <tr><td>OCP</td><td class="ctrl"><input id="pOcp" type="number" step="0.001" min="0"><button class="btn btn-sm btn-primary" data-action="ocp">ok</button></td></tr>
@@ -72,11 +78,14 @@
         <tr><td>OWH (Wh)</td><td class="ctrl"><input id="pOwh" type="number" step="0.01" min="0"><button class="btn btn-sm btn-primary" data-action="owh">ok</button></td></tr>
         <tr><td>Выход при пуске</td><td class="ctrl"><input id="pIni" type="checkbox"><button class="btn btn-sm btn-primary" data-action="ini">ok</button></td></tr>
       </table>
-      <button id="psuResetBtn" class="btn btn-sm btn-danger">Сброс БП</button>
+      <button id="psuResetBtn" class="btn btn-sm btn-danger">Сброс БП к заводским</button>
     </section>
+  </main>
 
+  <!-- Tab: Настройки -->
+  <main id="page-cfg" class="tabpage hidden">
     <section class="card" id="cfgCard">
-      <h2>Настройки</h2>
+      <h2>Настройки устройства</h2>
       <table class="editable">
         <tr><td>Подсветка</td><td class="ctrl"><input id="cBacklight" type="number" step="1" min="1" max="5"><button class="btn btn-sm btn-primary" data-action="backlight">ok</button></td></tr>
         <tr><td>Сон (мин)</td><td class="ctrl"><input id="cSleep" type="number" step="1" min="0" max="255"><button class="btn btn-sm btn-primary" data-action="sleep">ok</button></td></tr>
@@ -105,6 +114,12 @@
       </div>
     </section>
   </main>
+
+  <nav id="tabbar">
+    <button data-page="main" class="active">Главная</button>
+    <button data-page="prot">Защита</button>
+    <button data-page="cfg">Настройки</button>
+  </nav>
 
   <div id="toast"></div>
   <footer><span id="model"></span></footer>

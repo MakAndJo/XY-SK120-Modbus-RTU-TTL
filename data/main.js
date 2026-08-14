@@ -1,13 +1,75 @@
 const $ = (id) => document.getElementById(id);
 const fmt = (v, d = 2) => (isNaN(v) ? "--" : Number(v).toFixed(d));
 
+// ---- Multi-instance: several PSU servers saved in localStorage ----
+const SERVERS_KEY = "xypsu_servers";
+let servers = [];
+let currentIp = location.host;
+
+function loadServers() {
+  try {
+    const raw = localStorage.getItem(SERVERS_KEY);
+    servers = raw ? JSON.parse(raw) : [];
+  } catch { servers = []; }
+  if (!Array.isArray(servers)) servers = [];
+  if (!servers.length) servers = [{ name: "PSU", ip: location.host }];
+  if (!servers.some((s) => s.ip === location.host)) servers.unshift({ name: "PSU", ip: location.host });
+  saveServers();
+}
+
+function saveServers() {
+  try { localStorage.setItem(SERVERS_KEY, JSON.stringify(servers)); } catch {}
+}
+
+function renderDeviceSelect() {
+  const sel = $("deviceSelect");
+  sel.innerHTML = "";
+  servers.forEach((s, i) => {
+    const opt = document.createElement("option");
+    opt.value = s.ip;
+    opt.textContent = `${s.name} (${s.ip})`;
+    if (s.ip === currentIp) opt.selected = true;
+    sel.appendChild(opt);
+  });
+  $("deviceName").textContent = servers.find((s) => s.ip === currentIp)?.name || "PSU";
+}
+
+function switchDevice(ip) {
+  if (!ip || ip === currentIp) return;
+  currentIp = ip;
+  renderDeviceSelect();
+  toast(`Сервер ${ip}`);
+  setConn(false);
+  connect();
+}
+
+function addDevice(name, ip) {
+  ip = (ip || "").trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+  name = (name || "").trim() || ip || "PSU";
+  if (!ip) { toast("Введите IP"); return; }
+  servers.push({ name, ip });
+  saveServers();
+  switchDevice(ip);
+}
+
+function removeDevice(ip) {
+  servers = servers.filter((s) => s.ip !== ip);
+  saveServers();
+  if (!servers.length) servers = [{ name: "PSU", ip: location.host }];
+  renderDeviceSelect();
+  const sel = $("deviceSelect");
+  currentIp = sel.value || servers[0].ip;
+  connect();
+}
+
 // ---- WebSocket: the server pushes fresh status on its own ----
 let ws = null;
 let connected = false;
 
 function connect() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
-  ws = new WebSocket(`${proto}://${location.host}/ws`);
+  if (ws) { ws.onclose = null; try { ws.close(); } catch {} }
+  ws = new WebSocket(`${proto}://${currentIp}/ws`);
   ws.onopen = () => {
     connected = true;
     setConn(false);
@@ -47,37 +109,43 @@ function fmtTime(sec) {
 // Only touch an input if the user isn't currently editing it
 const editable = (id) => !document.activeElement || document.activeElement.id !== id;
 
+// Protection codes as in the XY-SK150 protocol
+const PROT_LABELS = {
+  1: "OVP", 2: "OCP", 3: "OPP", 4: "LVP", 5: "OAH", 6: "OHP",
+  7: "OTP", 8: "OEP", 9: "OWH", 10: "ICP", 11: "ETP"
+};
+const protectionText = (code) => PROT_LABELS[code] || `Prot#${code}`;
+
 function renderStatus(s) {
   if (!s) return;
+  // Output toggle shows the CURRENT state (state, not action)
   const on = !!s.outputEnabled;
   $("voltage").textContent = fmt(s.voltage);
   $("current").textContent = fmt(s.current, 3);
   $("power").textContent = fmt(s.power);
-  $("mode").textContent = s.operatingMode || "--";
-  $("mode").className = "badge " + String(s.operatingMode || "?").toLowerCase();
-  $("modeName").textContent = s.operatingModeName || "--";
-  $("inputVoltage").textContent = `Uin ${fmt(s.inputVoltage)}V`;
-  $("setValue").textContent = fmt(s.setValue);
 
   if (s.deviceName) $("deviceName").textContent = s.deviceName;
 
-  // Protection status badge
-  const ps = $("protStatus");
+  // 4th slot: CV/CC/CW mode, or the protection error (red) when triggered
+  const md = $("mode");
   const code = Number(s.protectionStatus);
   if (!isNaN(code) && code > 0) {
-    ps.textContent = s.protectionText || `Prot#${code}`;
-    ps.className = "badge badge-warn";
-    ps.title = s.protectionText || "";
+    md.textContent = protectionText(code);
+    md.className = "err";
   } else {
-    ps.textContent = "OK";
-    ps.className = "badge badge-ok";
-    ps.title = "Normal";
+    const m = String(s.operatingMode || "--");
+    md.textContent = m === "CP" ? "CW" : m;
+    md.className = (m === "CV") ? "cv" : (m === "CC") ? "cc" : (m === "CP" ? "cp" : "");
   }
+
+  // Protection status is shown in the 4th slot; reset button only when triggered
+  $("clearProtBtn").classList.toggle("hidden", isNaN(code) || code === 0);
 
   // Energy & temperatures
   $("ampHours").textContent = `${fmt(s.ampHours, 3)} Ah`;
   $("wattHours").textContent = `${fmt(s.wattHours, 3)} Wh`;
   $("outputTime").textContent = fmtTime(s.outputTime);
+  $("inputVoltage").textContent = `${fmt(s.inputVoltage)} V`;
   $("internalTemp").textContent = `${fmt(s.internalTemp, 1)} ${s.tempCelsius ? "°C" : "°F"}`;
   $("externalTemp").textContent = `${fmt(s.externalTemp, 1)} ${s.tempCelsius ? "°C" : "°F"}`;
 
@@ -106,11 +174,12 @@ function renderStatus(s) {
   if (editable("cMemGroup")) $("cMemGroup").value = s.memoryGroup != null ? String(s.memoryGroup) : "0";
 
   const btn = $("outBtn");
-  btn.textContent = on ? "ВЫКЛ" : "ВКЛ";
-  btn.className = "btn " + (on ? "btn-danger" : "btn-success");
+  btn.textContent = on ? "ВКЛ" : "ВЫКЛ";
+  btn.className = "btn " + (on ? "btn-success" : "btn-danger");
 
-  $("keyLock").textContent = s.keyLockEnabled ? "Замок вкл" : "Замок выкл";
+  $("keyLock").textContent = s.keyLockEnabled ? "🔒" : "🔓";
   $("keyLock").className = "btn btn-sm " + (s.keyLockEnabled ? "btn-warning" : "btn-ghost");
+  $("keyLock").title = s.keyLockEnabled ? "Снять блокировку" : "Заблокировать";
 
   if (editable("vIn")) $("vIn").value = fmt(s.voltageSet);
   if (editable("iIn")) $("iIn").value = fmt(s.currentSet, 3);
@@ -122,6 +191,15 @@ function renderWifi(s) {
   $("wifiSsid").textContent = s.ssid || "--";
   $("wifiIp").textContent = s.ip || "--";
   $("wifiRssi").textContent = s.rssi != null ? `${s.rssi} dBm` : "--";
+}
+
+// ---- Tabs ----
+function switchTab(tab) {
+  document.querySelectorAll(".tabpage").forEach((p) => p.classList.add("hidden"));
+  $("page-" + tab).classList.remove("hidden");
+  document.querySelectorAll("#tabbar button").forEach((b) => {
+    b.classList.toggle("active", b.dataset.page === tab);
+  });
 }
 
 // ---- Message handling ----
@@ -136,7 +214,9 @@ function handleMessage(raw) {
       renderWifi(msg.wifiStatus ? JSON.parse(msg.wifiStatus) : msg);
       break;
     case "powerOutputResponse":
+    case "clearProtectionResponse":
       if (msg.error) toast(msg.error);
+      else if (msg.action === "clearProtectionResponse") toast("Защита сброшена");
       break;
     case "setVoltageResponse":
     case "setCurrentResponse":
@@ -145,8 +225,9 @@ function handleMessage(raw) {
     case "setKeyLockResponse":
     case "keyLockResponse":
       if (msg.locked != null) {
-        $("keyLock").textContent = msg.locked ? "Замок вкл" : "Замок выкл";
+        $("keyLock").textContent = msg.locked ? "🔒" : "🔓";
         $("keyLock").className = "btn btn-sm " + (msg.locked ? "btn-warning" : "btn-ghost");
+        $("keyLock").title = msg.locked ? "Снять блокировку" : "Заблокировать";
       }
       break;
     case "connectWifiResponse":
@@ -174,7 +255,7 @@ function toast(t) {
 // ---- Actions ----
 function toggleOutput() {
   const on = $("outBtn").textContent === "ВКЛ";
-  send({ action: "powerOutput", enable: on });
+  send({ action: "powerOutput", enable: !on });
 }
 
 function setVoltage() {
@@ -190,8 +271,7 @@ function setCurrent() {
 }
 
 function toggleKeyLock() {
-  const lock = !($("keyLock").textContent.startsWith("Замок вкл"));
-  send({ action: "setKeyLock", lock });
+  send({ action: "setKeyLock", lock: !($("keyLock").textContent === "🔒") });
 }
 
 function loadWifiStatus() {
@@ -232,17 +312,43 @@ function applyRow(action) {
 
 // ---- Boot ----
 document.addEventListener("DOMContentLoaded", () => {
+  loadServers();
+  renderDeviceSelect();
+
   $("outBtn").addEventListener("click", toggleOutput);
-  $("vSetBtn").addEventListener("click", setVoltage);
-  $("iSetBtn").addEventListener("click", setCurrent);
   $("keyLock").addEventListener("click", toggleKeyLock);
   $("wifiAddBtn").addEventListener("click", addNetwork);
   $("wifiRefresh").addEventListener("click", loadWifiStatus);
   $("psuResetBtn").addEventListener("click", () => {
     if (confirm("Сбросить БП к заводским настройкам?")) send({ action: "psuReset" });
   });
+  $("clearProtBtn").addEventListener("click", () => {
+    if (confirm("Сбросить сработавшую защиту?")) send({ action: "clearProtection" });
+  });
   $("restartBtn").addEventListener("click", () => {
     if (confirm("Перезапустить ESP32?")) send({ action: "restart" });
+  });
+
+  // Tabs
+  document.querySelectorAll("#tabbar button").forEach((btn) => {
+    btn.addEventListener("click", () => switchTab(btn.dataset.page));
+  });
+
+  // Multi-instance controls
+  $("deviceSelect").addEventListener("change", (e) => switchDevice(e.target.value));
+  $("devAddBtn").addEventListener("click", () => {
+    $("addForm").classList.toggle("hidden");
+    if (!$("addForm").classList.contains("hidden")) $("newName").focus();
+  });
+  $("addCancel").addEventListener("click", () => $("addForm").classList.add("hidden"));
+  $("addOk").addEventListener("click", () => {
+    addDevice($("newName").value, $("newIp").value);
+    $("newName").value = "";
+    $("newIp").value = "";
+    $("addForm").classList.add("hidden");
+  });
+  $("devDelBtn").addEventListener("click", () => {
+    if (confirm("Удалить этот сервер?")) removeDevice(currentIp);
   });
 
   // All [data-action] "ok" buttons

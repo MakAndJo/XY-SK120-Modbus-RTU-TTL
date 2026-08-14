@@ -390,25 +390,6 @@ bool readPSUStatusBatchedLocked(PSUStatusData& data) {
   return true;
 }
 
-// Map protection status code to a human readable label (matches XY-SK150 protocol)
-const char* protectionText(uint16_t code) {
-  switch (code) {
-    case 0:  return "Normal";
-    case 1:  return "OVP over voltage protection";
-    case 2:  return "OCP over current protection";
-    case 3:  return "OPP over power protection";
-    case 4:  return "LVP input undervoltage protection";
-    case 5:  return "OAH over amp-hour protection";
-    case 6:  return "OHP overtime protection";
-    case 7:  return "OTP over temperature protection";
-    case 8:  return "OEP no output protection";
-    case 9:  return "OWH over watt-hour protection";
-    case 10: return "ICP over input current protection";
-    case 11: return "ETP external temperature protection";
-    default: return "Unknown";
-  }
-}
-
 // Build and serialize the status JSON from a status snapshot
 String buildStatusJSON(const PSUStatusData& data) {
   DynamicJsonDocument doc(2048);
@@ -427,7 +408,6 @@ String buildStatusJSON(const PSUStatusData& data) {
   doc["internalTemp"] = data.internalTemp;
   doc["externalTemp"] = data.externalTemp;
   doc["protectionStatus"] = data.protectionStatus;
-  doc["protectionText"] = protectionText(data.protectionStatus);
   
   // Device settings
   doc["tempCelsius"] = data.tempCelsius;
@@ -449,31 +429,25 @@ String buildStatusJSON(const PSUStatusData& data) {
   doc["overWattHours"] = data.overWattHours;
   
   const char* modeCode;
-  const char* modeName;
   float setValue;
   switch (data.operatingMode) {
     case MODE_CV:
       modeCode = "CV";
-      modeName = "Constant Voltage";
       setValue = data.voltageSet;
       break;
     case MODE_CC:
       modeCode = "CC";
-      modeName = "Constant Current";
       setValue = data.currentSet;
       break;
     case MODE_CP:
       modeCode = "CP";
-      modeName = "Constant Power";
       setValue = data.powerSet;
       break;
     default:
       modeCode = "Unknown";
-      modeName = "Unknown";
       setValue = 0.0;
   }
   doc["operatingMode"] = modeCode;
-  doc["operatingModeName"] = modeName;
   doc["setValue"] = setValue;
   
   doc["voltageSet"] = data.voltageSet;
@@ -520,6 +494,12 @@ void sendCompletePSUStatus(AsyncWebSocketClient* client) {
 // Called periodically from loop(). Does nothing when nobody is connected.
 // Only broadcasts when the status actually changed - identical polls are
 // skipped to avoid flooding the network with redundant messages.
+static String lastResponse;
+
+void forceStatusBroadcast() {
+  lastResponse = "";
+}
+
 void pollAndBroadcastPSUStatus() {
   if (!powerSupply) return;
   if (ws.count() == 0) return;  // Nobody listening - skip Modbus traffic
@@ -538,7 +518,6 @@ void pollAndBroadcastPSUStatus() {
   }
   
   // Only push when the payload differs from the last broadcast
-  static String lastResponse;
   if (response == lastResponse) {
     return;
   }
@@ -919,6 +898,12 @@ void handleDeviceSettingAction(AsyncWebSocketClient* client, const String& actio
     success = powerSupply->restoreFactoryDefaults();
     unlockModbus();
     responseAction = "psuResetResponse";
+  }
+  else if (action == "clearProtection") {
+    lockModbus();
+    success = powerSupply->writeRegister(REG_PROTECT, 0x0000);
+    unlockModbus();
+    responseAction = "clearProtectionResponse";
   }
   else {
     return; // Unknown action - do nothing
@@ -1429,7 +1414,8 @@ void handleWebSocketMessage(AsyncWebSocket* server, AsyncWebSocketClient* client
              action == "setSlaveAddress" || action == "setBaudRate" || action == "setTempUnit" ||
              action == "setBeeper" || action == "setMppt" || action == "setBatteryCutoff" ||
              action == "setPowerOnInit" || action == "setOhp" || action == "setOha" ||
-             action == "setOwh" || action == "setMemoryGroup" || action == "psuReset") {
+             action == "setOwh" || action == "setMemoryGroup" || action == "psuReset" ||
+             action == "clearProtection") {
       if (!powerSupply) {
         client->text("{\"action\":\"deviceSettingResponse\",\"success\":false,\"error\":\"Power supply not connected\"}");
         return;
@@ -1451,8 +1437,9 @@ void onWsEvent(AsyncWebSocket* server, AsyncWebSocketClient* client,
   switch (type) {
     case WS_EVT_CONNECT:
       LOG_INFO("WebSocket client #" + String(client->id()) + " connected from " + client->remoteIP().toString());
-      // Fresh status is delivered automatically by the loop() poller within
-      // the next poll cycle (no Modbus calls from the async_tcp task).
+      // Ensure the newly connected client gets a fresh status broadcast right
+      // away, even if the status hasn't changed since the last poll.
+      forceStatusBroadcast();
       break;
     case WS_EVT_DISCONNECT:
       LOG_INFO("WebSocket client #" + String(client->id()) + " disconnected");
