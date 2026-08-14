@@ -120,9 +120,9 @@ function renderStatus(s) {
   if (!s) return;
   // Output toggle shows the CURRENT state (state, not action)
   const on = !!s.outputEnabled;
-  $("voltage").textContent = fmt(s.voltage);
-  $("current").textContent = fmt(s.current, 3);
-  $("power").textContent = fmt(s.power);
+  $("voltage").textContent = fmt(s.voltage) + "V";
+  $("current").textContent = fmt(s.current, 3) + "A";
+  $("power").textContent = fmt(s.power) + "W";
 
   if (s.deviceName) $("deviceName").textContent = s.deviceName;
 
@@ -132,6 +132,9 @@ function renderStatus(s) {
   if (!isNaN(code) && code > 0) {
     md.textContent = protectionText(code);
     md.className = "err";
+  } else if (!on) {
+    md.textContent = "OFF";
+    md.className = "off";
   } else {
     const m = String(s.operatingMode || "--");
     md.textContent = m === "CP" ? "CW" : m;

@@ -53,7 +53,7 @@ header .dot { display: inline-block; width: 10px; height: 10px; border-radius: 5
 .hidden { display: none !important; }
 
 main {
-  max-width: 640px;
+  max-width: 560px;
   width: 100%;
   margin: 0 auto;
   padding: 20px;
@@ -79,18 +79,26 @@ main {
   gap: 10px;
 }
 
-.row { display: flex; gap: 10px; align-items: center; margin-top: 10px; }
+.row { display: flex; gap: 10px; align-items: center; }
 .row.big { margin-top: 0; }
+.col { display: flex; flex-direction: column; gap: 0.5em; }
+.col.big { gap:0; }
+.col.control {
+  text-align: end;
+  min-height: stretch;
+  align-items: end;
+  justify-content: space-between;
+}
 
-.val { flex: 1; text-align: center; }
-.val label { display: block; color: var(--muted); font-size: 0.75rem; margin-bottom: 2px; }
-output { font-size: 2rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.val { flex: 1; display: contents; }
+output { font-size: 4em; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
 #voltage { color: var(--out-v); }
 #current { color: var(--out-a); }
 #power { color: var(--out-w); }
 #mode.cv { color: var(--out-v); }
 #mode.cc { color: var(--out-a); }
 #mode.cp { color: var(--out-w); }
+#mode.off { color: var(--red); }
 #mode.err { color: var(--red); }
 
 .badge { background: var(--border); color: var(--text); padding: 3px 10px; border-radius: 999px; font-size: 0.8rem; font-weight: 600; }

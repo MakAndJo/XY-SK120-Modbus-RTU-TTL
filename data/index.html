@@ -29,16 +29,23 @@
   <!-- Tab: Главная -->
   <main id="page-main" class="tabpage">
     <section class="card" id="live">
-      <div class="row big">
-        <div class="val"><label>V</label><output id="voltage">--</output></div>
-        <div class="val"><label>A</label><output id="current">--</output></div>
-        <div class="val"><label>W</label><output id="power">--</output></div>
-        <div class="val"><label>М</label><output id="mode">--</output></div>
-      </div>
-      <div class="row live-controls">
-        <button id="clearProtBtn" class="btn btn-sm btn-danger hidden">Сброс</button>
-        <button id="keyLock" class="btn btn-sm btn-warning" style="margin-left:auto">🔒</button>
-        <button id="outBtn" class="btn btn-success">ВКЛ</button>
+      <div class="row">
+        <div class="col big" style="flex: 1;margin: -6px 0;">
+          <div class="val"><output id="voltage">--</output></div>
+          <div class="val"><output id="current">--</output></div>
+          <div class="val"><output id="power">--</output></div>
+        </div>
+        <div class="col control">
+          <div class="col">
+            <div class="val"><output id="internalTemp" style="font-size: 1.9em;">--</output></div>
+            <div class="val"><output id="mode" class="cv" style="font-size: 3em;">--</output></div>
+            <button id="clearProtBtn" class="btn btn-sm btn-danger hidden">Сброс</button>
+          </div>
+          <div class="row live-controls">
+            <button id="keyLock" class="btn btn-sm btn-warning" style="margin-left:auto">🔒</button>
+            <button id="outBtn" class="btn btn-success">ВКЛ</button>
+          </div>
+        </div>
       </div>
     </section>
 
