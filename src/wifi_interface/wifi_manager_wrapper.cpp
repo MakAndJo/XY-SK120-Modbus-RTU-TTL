@@ -11,6 +11,34 @@ extern WiFiManager wifiManager;
 // Global flag to track if WiFiManager saved credentials
 bool wifiCredentialsSaved = false;
 
+// Map common ESP32 WiFi disconnect reasons to human-readable strings
+const char* wifiDisconnectReasonStr(uint8_t reason) {
+  switch (reason) {
+    case 1: return "UNSPECIFIED";
+    case 2: return "AUTH_EXPIRE";
+    case 3: return "AUTH_LEAVE";
+    case 4: return "ASSOC_EXPIRE";
+    case 8: return "BEACON_TIMEOUT";
+    case 15: return "4WAY_HANDSHAKE_TIMEOUT";
+    case 200: return "AUTH_FAIL";
+    case 201: return "NO_AP_FOUND";
+    case 202: return "AUTH_FAIL2";
+    case 203: return "ASSOC_FAIL";
+    case 204: return "HANDSHAKE_TIMEOUT";
+    case 205: return "CONNECTION_FAIL";
+    case 206: return "AP_TSF_RESET";
+    default: return "OTHER";
+  }
+}
+
+// WiFi event handler to log the real reason a STA connection fails
+void wifiStaDisconnectedHandler(WiFiEvent_t event, WiFiEventInfo_t info) {
+  if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
+    uint8_t reason = info.wifi_sta_disconnected.reason;
+    Serial.printf("[WIFI] STA disconnected, reason=%u (%s)\n", reason, wifiDisconnectReasonStr(reason));
+  }
+}
+
 // Callback when WiFiManager saves config
 void saveWifiCallback() {
   Serial.println("WiFiManager: Credentials Saved");
@@ -172,6 +200,8 @@ void syncCurrentWiFiToStorage() {
 bool connectToSavedNetworks() {
   // FIRST TRY: Use WiFiManager's internally stored credentials (special priority 0)
   Serial.println("First trying WiFiManager's internal credentials...");
+  WiFi.disconnect(); // stop any stale/ongoing STA attempt first
+  delay(100);
   WiFi.begin(); // This attempts to connect using ESP32's internal stored credentials
   
   // Wait for connection with timeout
@@ -198,6 +228,8 @@ bool connectToSavedNetworks() {
   
   // SECOND TRY: Load and try saved WiFi credentials from NVS in priority order
   Serial.println("WiFiManager credentials failed. Trying NVS-stored networks...");
+  WiFi.disconnect(); // abort the still-running connect attempt before moving on
+  delay(100);
   String wifiListJson = loadWiFiCredentialsFromNVS();
   
   // If no saved credentials, return false and let WiFiManager handle it
@@ -261,6 +293,8 @@ bool connectToSavedNetworks() {
     }
     
     // Attempt to connect with a timeout
+    WiFi.disconnect(); // stop any stale/ongoing STA attempt first
+    delay(100);
     WiFi.begin(network.ssid.c_str(), network.password.c_str());
     
     // Wait for connection (with timeout)
@@ -287,6 +321,8 @@ bool connectToSavedNetworks() {
   }
   
   // If all attempts fail, return false to trigger portal mode
+  WiFi.disconnect(); // fully stop STA so WiFiManager's autoConnect starts from a clean state
+  delay(100);
   Serial.println("All saved networks failed to connect");
   return false;
 }
@@ -294,6 +330,21 @@ bool connectToSavedNetworks() {
 bool initWiFiManager(const char* apName) {
   // Initialize WiFi
   WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false); // keep the radio responsive (helps STA connect and AP association)
+  // 10dBm instead of max 19.5dBm: on ESP32-C3/S3 the RF front-end saturates at max power,
+  // which breaks the data path (AP disappears / association fails / STA handshake timeout).
+  WiFi.setTxPower(WIFI_POWER_11dBm);
+
+  // Register diagnostic handler for STA disconnect reasons
+  WiFi.onEvent(wifiStaDisconnectedHandler, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
+
+  // Diagnostic: what does WiFiManager have saved (mask the password)
+  {
+    String savedSSID = wifiManager.getWiFiSSID(true);
+    String savedPass = wifiManager.getWiFiPass(true);
+    Serial.printf("[WIFI] WiFiManager saved: SSID='%s' passLen=%u\n",
+                  savedSSID.c_str(), savedPass.length());
+  }
 
   // Set custom AP name
   wifiManager.setConfigPortalTimeout(180); // 3 minutes timeout for the config portal
@@ -330,8 +381,8 @@ bool initWiFiManager(const char* apName, const char* apPassword) {
   // Configure access point
   wifiManager.setAPStaticIPConfig(IPAddress(192,168,4,1), IPAddress(192,168,4,1), IPAddress(255,255,255,0));
     
-  // Set access point channel - channel 1 is often less crowded
-  WiFi.setTxPower(WIFI_POWER_19_5dBm);
+  // Set access point channel
+  WiFi.setTxPower(WIFI_POWER_11dBm);
     
   // Extend timeout to 5 minutes to give more time for configuration
   wifiManager.setConfigPortalTimeout(300);

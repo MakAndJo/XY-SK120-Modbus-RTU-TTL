@@ -52,6 +52,9 @@ void setup() {
     setCpuFrequencyMhz(160);
     Serial.printf("CPU frequency set to: %d MHz\n", ESP.getCpuFreqMHz());
 
+    // Disable Bluetooth to free the shared 2.4GHz radio and avoid WiFi/BT coexistence issues
+    btStop();
+
     #else
     // ESP32S3 initialization
     delay(1000);
