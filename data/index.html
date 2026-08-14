@@ -18,120 +18,124 @@
     </div>
   </header>
 
-  <!-- Tab: Главная -->
-  <main id="page-main" class="tabpage">
-    <section>
-      <div class="device-bar">
-        <select id="deviceSelect" class="device-select"></select>
-        <button id="devAddBtn" class="btn btn-sm btn-primary">+</button>
-        <button id="devDelBtn" class="btn btn-sm btn-ghost" title="Удалить устройство">✕</button>
-      </div>
-      <div id="addForm" class="hidden">
-        <input id="newName" type="text" placeholder="Имя (PSU)">
-        <input id="newIp" type="text" placeholder="192.168.1.100">
-        <button id="addOk" class="btn btn-sm btn-primary">OK</button>
-        <button id="addCancel" class="btn btn-sm btn-ghost">Нет</button>
-      </div>
-    </section>
-
-    <section class="card" id="live" style="user-select: none;">
-      <div class="row">
-        <div class="col big" style="flex: 1;margin: -6px 0;">
-          <div class="val"><output id="voltage">--</output></div>
-          <div class="val"><output id="current">--</output></div>
-          <div class="val"><output id="power">--</output></div>
+  <main>
+    <!-- Tab: Главная -->
+    <tab id="page-main" class="tabpage">
+      <section>
+        <div class="device-bar row">
+          <select id="deviceSelect" class="device-select"></select>
+          <button id="devAddBtn" class="btn btn-primary">+</button>
+          <button id="devDelBtn" class="btn btn-ghost" title="Удалить устройство">⤬</button>
         </div>
-        <div class="col control">
-          <div class="col">
-            <div class="val"><output id="internalTemp" style="font-size: 1.8em;">--</output></div>
-            <div class="val"><output id="mode" class="cv" style="font-size: 3em;">--</output></div>
+        <div id="addForm" class="hidden device-bar row">
+          <input id="newName" type="text" placeholder="Имя (PSU)">
+          <input id="newIp" type="text" placeholder="192.168.1.100">
+          <button id="addOk" class="btn btn-primary">OK</button>
+          <!-- <button id="addCancel" class="btn btn-ghost">✕</button> -->
+        </div>
+      </section>
+
+      <section class="card" id="live" style="user-select: none;">
+        <div class="row">
+          <div class="col big" style="flex: 1;margin: -6px 0;">
+            <div class="val"><output id="voltage">--</output></div>
+            <div class="val"><output id="current">--</output></div>
+            <div class="val"><output id="power">--</output></div>
           </div>
-          <div class="row live-controls">
-            <button id="keyLock" class="btn btn-sm btn-warning" style="margin-left:auto">🔒</button>
-            <button id="outBtn" class="btn btn-success">ВКЛ</button>
+          <div class="col control">
+            <div class="col">
+              <div class="val"><output id="internalTemp" style="font-size: 1.8em;">--</output></div>
+              <div class="val"><output id="mode" class="cv" style="font-size: 3em;">--</output></div>
+            </div>
+            <div class="row live-controls">
+              <button id="keyLock" class="btn btn-sm btn-warning" style="margin-left:auto">🔒</button>
+              <button id="outBtn" class="btn btn-success">ВКЛ</button>
+            </div>
           </div>
         </div>
-      </div>
-    </section>
+      </section>
 
-    <section class="card">
-      <h2>Установка</h2>
-      <div class="row">
-        <button id="vMinus" class="btn btn-sm btn-ghost">−</button>
-        <input id="vIn" type="number" step="0.01" min="0" max="150" placeholder="V">
-        <button id="vPlus" class="btn btn-sm btn-ghost">+</button>
-      </div>
-      <div class="row">
-        <button id="iMinus" class="btn btn-sm btn-ghost">−</button>
-        <input id="iIn" type="number" step="0.001" min="0" max="65" placeholder="A">
-        <button id="iPlus" class="btn btn-sm btn-ghost">+</button>
-      </div>
-    </section>
+      <section class="card">
+        <h2>Установка</h2>
+        <div class="row">
+          <button id="vMinus" class="btn btn-sm btn-ghost">−</button>
+          <input id="vIn" type="number" step="0.01" min="0" max="150" placeholder="V">
+          <button id="vPlus" class="btn btn-sm btn-ghost">+</button>
+        </div>
+        <div class="row">
+          <button id="iMinus" class="btn btn-sm btn-ghost">−</button>
+          <input id="iIn" type="number" step="0.001" min="0" max="65" placeholder="A">
+          <button id="iPlus" class="btn btn-sm btn-ghost">+</button>
+        </div>
+      </section>
 
-    <section class="card" id="energyCard">
-      <h2>Энергия и температура</h2>
-      <table>
-        <tr><td>Заряд (Ah)</td><td id="ampHours">--</td></tr>
-        <tr><td>Энергия (Wh)</td><td id="wattHours">--</td></tr>
-        <tr><td>Время работы</td><td id="outputTime">--</td></tr>
-        <tr><td>Вход (Uin)</td><td id="inputVoltage">--</td></tr>
-        <tr><td>Темп. внутр.</td><td class="energy-temp-in">--</td></tr>
-        <tr><td>Темп. внешн.</td><td class="energy-temp-ex">--</td></tr>
-      </table>
-    </section>
+      <section class="card" id="energyCard">
+        <h2>Энергия и температура</h2>
+        <table>
+          <tr><td>Заряд (Ah)</td><td id="ampHours">--</td></tr>
+          <tr><td>Энергия (Wh)</td><td id="wattHours">--</td></tr>
+          <tr><td>Время работы</td><td id="outputTime">--</td></tr>
+          <tr><td>Вход (Uin)</td><td id="inputVoltage">--</td></tr>
+          <tr><td>Темп. внутр.</td><td class="energy-temp-in">--</td></tr>
+          <tr><td>Темп. внешн.</td><td class="energy-temp-ex">--</td></tr>
+        </table>
+      </section>
+    </tab>
+
+    <!-- Tab: Защита -->
+    <tab id="page-prot" class="tabpage hidden">
+      <section class="card" id="protCard">
+        <h2>Профиль и защита</h2>
+        <table class="editable">
+          <tr><td>OVP</td><td class="ctrl"><input id="pOvp" type="number" step="0.01" min="0"><button class="btn btn-sm btn-primary" data-action="ovp">ok</button></td></tr>
+          <tr><td>OCP</td><td class="ctrl"><input id="pOcp" type="number" step="0.001" min="0"><button class="btn btn-sm btn-primary" data-action="ocp">ok</button></td></tr>
+          <tr><td>OPP</td><td class="ctrl"><input id="pOpp" type="number" step="0.1" min="0"><button class="btn btn-sm btn-primary" data-action="opp">ok</button></td></tr>
+          <tr><td>LVP</td><td class="ctrl"><input id="pLvp" type="number" step="0.01" min="0"><button class="btn btn-sm btn-primary" data-action="lvp">ok</button></td></tr>
+          <tr><td>OTP</td><td class="ctrl"><input id="pOtp" type="number" step="1" min="0"><button class="btn btn-sm btn-primary" data-action="otp">ok</button></td></tr>
+          <tr><td>OHP (чч:мм)</td><td class="ctrl"><input id="pOhpH" type="number" step="1" min="0" max="99" placeholder="ч"><input id="pOhpM" type="number" step="1" min="0" max="59" placeholder="мин"><button class="btn btn-sm btn-primary" data-action="ohp">ok</button></td></tr>
+          <tr><td>OHA (Ah)</td><td class="ctrl"><input id="pOha" type="number" step="0.001" min="0"><button class="btn btn-sm btn-primary" data-action="oha">ok</button></td></tr>
+          <tr><td>OWH (Wh)</td><td class="ctrl"><input id="pOwh" type="number" step="0.01" min="0"><button class="btn btn-sm btn-primary" data-action="owh">ok</button></td></tr>
+          <tr><td>Выход при пуске</td><td class="ctrl"><input id="pIni" type="checkbox"><button class="btn btn-sm btn-primary" data-action="ini">ok</button></td></tr>
+        </table>
+        <button id="psuResetBtn" class="btn btn-sm btn-danger">Сброс БП к заводским</button>
+      </section>
+    </tab>
+
+    <!-- Tab: Настройки -->
+    <tab id="page-cfg" class="tabpage hidden">
+      <section class="card" id="cfgCard">
+        <h2>Настройки устройства</h2>
+        <table class="editable">
+          <tr><td>Подсветка</td><td class="ctrl"><input id="cBacklight" type="number" step="1" min="1" max="5"><button class="btn btn-sm btn-primary" data-action="backlight">ok</button></td></tr>
+          <tr><td>Сон (мин)</td><td class="ctrl"><input id="cSleep" type="number" step="1" min="0" max="255"><button class="btn btn-sm btn-primary" data-action="sleep">ok</button></td></tr>
+          <tr><td>Slave адрес</td><td class="ctrl"><input id="cSlave" type="number" step="1" min="0" max="247"><button class="btn btn-sm btn-primary" data-action="slave">ok</button></td></tr>
+          <tr><td>Baud rate</td><td class="ctrl"><select id="cBaud"><option value="0">9600</option><option value="1">14400</option><option value="2">19200</option><option value="3">38400</option><option value="4">56000</option><option value="5">576000</option><option value="6" selected>115200</option><option value="7">2400</option><option value="8">4800</option></select><button class="btn btn-sm btn-primary" data-action="baud">ok</button></td></tr>
+          <tr><td>Единицы темп.</td><td class="ctrl"><select id="cTempUnit"><option value="c">°C</option><option value="f">°F</option></select><button class="btn btn-sm btn-primary" data-action="tempunit">ok</button></td></tr>
+          <tr><td>Зуммер</td><td class="ctrl"><input id="cBeeper" type="checkbox"><button class="btn btn-sm btn-primary" data-action="beeper">ok</button></td></tr>
+          <tr><td>MPPT</td><td class="ctrl"><input id="cMppt" type="checkbox"><button class="btn btn-sm btn-primary" data-action="mppt">ok</button><input id="cMpptThr" type="number" step="0.01" min="0.75" max="0.88" placeholder="порог" style="width:80px"></td></tr>
+          <tr><td>Ток откл. АКБ (A)</td><td class="ctrl"><input id="cBtf" type="number" step="0.001" min="0"><button class="btn btn-sm btn-primary" data-action="btf">ok</button></td></tr>
+          <tr><td>Группа памяти</td><td class="ctrl"><select id="cMemGroup"><option value="0">M0</option><option value="1">M1</option><option value="2">M2</option><option value="3">M3</option><option value="4">M4</option><option value="5">M5</option><option value="6">M6</option><option value="7">M7</option><option value="8">M8</option><option value="9">M9</option></select><button class="btn btn-sm btn-primary" data-action="memgroup">ok</button></td></tr>
+        </table>
+        <button id="restartBtn" class="btn btn-sm btn-danger">Перезапустить ESP</button>
+      </section>
+
+      <section class="card" id="wifiCard">
+        <h2>WiFi <button id="wifiRefresh" class="btn btn-sm btn-ghost">обновить</button></h2>
+        <table>
+          <tr><td>Сеть</td><td id="wifiSsid">--</td></tr>
+          <tr><td>IP</td><td id="wifiIp">--</td></tr>
+          <tr><td>Сигнал</td><td id="wifiRssi">--</td></tr>
+        </table>
+        <div class="row">
+          <input id="wifiNewSsid" type="text" placeholder="SSID">
+          <input id="wifiNewPass" type="password" placeholder="Пароль">
+          <button id="wifiAddBtn" class="btn btn-sm btn-primary">+</button>
+        </div>
+      </section>
+      <footer><span id="model"></span></footer>
+    </tab>
   </main>
 
-  <!-- Tab: Защита -->
-  <main id="page-prot" class="tabpage hidden">
-    <section class="card" id="protCard">
-      <h2>Профиль и защита</h2>
-      <table class="editable">
-        <tr><td>OVP</td><td class="ctrl"><input id="pOvp" type="number" step="0.01" min="0"><button class="btn btn-sm btn-primary" data-action="ovp">ok</button></td></tr>
-        <tr><td>OCP</td><td class="ctrl"><input id="pOcp" type="number" step="0.001" min="0"><button class="btn btn-sm btn-primary" data-action="ocp">ok</button></td></tr>
-        <tr><td>OPP</td><td class="ctrl"><input id="pOpp" type="number" step="0.1" min="0"><button class="btn btn-sm btn-primary" data-action="opp">ok</button></td></tr>
-        <tr><td>LVP</td><td class="ctrl"><input id="pLvp" type="number" step="0.01" min="0"><button class="btn btn-sm btn-primary" data-action="lvp">ok</button></td></tr>
-        <tr><td>OTP</td><td class="ctrl"><input id="pOtp" type="number" step="1" min="0"><button class="btn btn-sm btn-primary" data-action="otp">ok</button></td></tr>
-        <tr><td>OHP (чч:мм)</td><td class="ctrl"><input id="pOhpH" type="number" step="1" min="0" max="99" placeholder="ч"><input id="pOhpM" type="number" step="1" min="0" max="59" placeholder="мин"><button class="btn btn-sm btn-primary" data-action="ohp">ok</button></td></tr>
-        <tr><td>OHA (Ah)</td><td class="ctrl"><input id="pOha" type="number" step="0.001" min="0"><button class="btn btn-sm btn-primary" data-action="oha">ok</button></td></tr>
-        <tr><td>OWH (Wh)</td><td class="ctrl"><input id="pOwh" type="number" step="0.01" min="0"><button class="btn btn-sm btn-primary" data-action="owh">ok</button></td></tr>
-        <tr><td>Выход при пуске</td><td class="ctrl"><input id="pIni" type="checkbox"><button class="btn btn-sm btn-primary" data-action="ini">ok</button></td></tr>
-      </table>
-      <button id="psuResetBtn" class="btn btn-sm btn-danger">Сброс БП к заводским</button>
-    </section>
-  </main>
-
-  <!-- Tab: Настройки -->
-  <main id="page-cfg" class="tabpage hidden">
-    <section class="card" id="cfgCard">
-      <h2>Настройки устройства</h2>
-      <table class="editable">
-        <tr><td>Подсветка</td><td class="ctrl"><input id="cBacklight" type="number" step="1" min="1" max="5"><button class="btn btn-sm btn-primary" data-action="backlight">ok</button></td></tr>
-        <tr><td>Сон (мин)</td><td class="ctrl"><input id="cSleep" type="number" step="1" min="0" max="255"><button class="btn btn-sm btn-primary" data-action="sleep">ok</button></td></tr>
-        <tr><td>Slave адрес</td><td class="ctrl"><input id="cSlave" type="number" step="1" min="0" max="247"><button class="btn btn-sm btn-primary" data-action="slave">ok</button></td></tr>
-        <tr><td>Baud rate</td><td class="ctrl"><select id="cBaud"><option value="0">9600</option><option value="1">14400</option><option value="2">19200</option><option value="3">38400</option><option value="4">56000</option><option value="5">576000</option><option value="6" selected>115200</option><option value="7">2400</option><option value="8">4800</option></select><button class="btn btn-sm btn-primary" data-action="baud">ok</button></td></tr>
-        <tr><td>Единицы темп.</td><td class="ctrl"><select id="cTempUnit"><option value="c">°C</option><option value="f">°F</option></select><button class="btn btn-sm btn-primary" data-action="tempunit">ok</button></td></tr>
-        <tr><td>Зуммер</td><td class="ctrl"><input id="cBeeper" type="checkbox"><button class="btn btn-sm btn-primary" data-action="beeper">ok</button></td></tr>
-        <tr><td>MPPT</td><td class="ctrl"><input id="cMppt" type="checkbox"><button class="btn btn-sm btn-primary" data-action="mppt">ok</button><input id="cMpptThr" type="number" step="0.01" min="0.75" max="0.88" placeholder="порог" style="width:80px"></td></tr>
-        <tr><td>Ток откл. АКБ (A)</td><td class="ctrl"><input id="cBtf" type="number" step="0.001" min="0"><button class="btn btn-sm btn-primary" data-action="btf">ok</button></td></tr>
-        <tr><td>Группа памяти</td><td class="ctrl"><select id="cMemGroup"><option value="0">M0</option><option value="1">M1</option><option value="2">M2</option><option value="3">M3</option><option value="4">M4</option><option value="5">M5</option><option value="6">M6</option><option value="7">M7</option><option value="8">M8</option><option value="9">M9</option></select><button class="btn btn-sm btn-primary" data-action="memgroup">ok</button></td></tr>
-      </table>
-      <button id="restartBtn" class="btn btn-sm btn-danger">Перезапустить ESP</button>
-    </section>
-
-    <section class="card" id="wifiCard">
-      <h2>WiFi <button id="wifiRefresh" class="btn btn-sm btn-ghost">обновить</button></h2>
-      <table>
-        <tr><td>Сеть</td><td id="wifiSsid">--</td></tr>
-        <tr><td>IP</td><td id="wifiIp">--</td></tr>
-        <tr><td>Сигнал</td><td id="wifiRssi">--</td></tr>
-      </table>
-      <div class="row">
-        <input id="wifiNewSsid" type="text" placeholder="SSID">
-        <input id="wifiNewPass" type="password" placeholder="Пароль">
-        <button id="wifiAddBtn" class="btn btn-sm btn-primary">+</button>
-      </div>
-    </section>
-  </main>
 
   <nav id="tabbar">
     <button data-page="main" class="active">Главная</button>
@@ -140,7 +144,6 @@
   </nav>
 
   <div id="toast"></div>
-  <footer><span id="model"></span></footer>
   <script src="main.js"></script>
 </body>
 </html>

@@ -382,17 +382,21 @@ document.addEventListener("DOMContentLoaded", () => {
   $("deviceSelect").addEventListener("change", (e) => switchDevice(e.target.value));
   $("devAddBtn").addEventListener("click", () => {
     $("addForm").classList.toggle("hidden");
-    if (!$("addForm").classList.contains("hidden")) $("newName").focus();
+    if (!$("addForm").classList.contains("hidden")) {
+      $("newName").focus();
+      $("devAddBtn").innerText = "˅";
+    } else $("devAddBtn").innerText = "+";
   });
-  $("addCancel").addEventListener("click", () => $("addForm").classList.add("hidden"));
+  // $("addCancel").addEventListener("click", () => $("addForm").classList.add("hidden"));
   $("addOk").addEventListener("click", () => {
     addDevice($("newName").value, $("newIp").value);
     $("newName").value = "";
     $("newIp").value = "";
     $("addForm").classList.add("hidden");
+    $("devAddBtn").innerText = "+";
   });
   $("devDelBtn").addEventListener("click", () => {
-    if (confirm("Удалить этот сервер?")) removeDevice(currentIp);
+    if (confirm(`Удалить этот сервер? (${currentIp})`)) removeDevice(currentIp);
   });
 
   // All [data-action] "ok" buttons
