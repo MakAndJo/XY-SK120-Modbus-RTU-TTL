@@ -11,12 +11,12 @@ static DeviceConfig configData = {
   0,           // parity (0=none, 1=odd, 2=even)
   1,           // stopBits
   5000,        // updateInterval in ms
-  "XY-SK120"   // deviceName
+  "XY-SK150S"   // deviceName
 };
 
 bool loadConfig() {
   File configFile = LittleFS.open("/config.json", "r");
-  
+
   if (!configFile) {
     Serial.println("Failed to open config file for reading");
     return false;
@@ -35,7 +35,7 @@ bool loadConfig() {
 
   DynamicJsonDocument doc(1024);
   DeserializationError error = deserializeJson(doc, buf.get());
-  
+
   if (error) {
     Serial.println("Failed to parse config file");
     return false;
@@ -47,18 +47,18 @@ bool loadConfig() {
   configData.parity = doc["parity"] | 0;
   configData.stopBits = doc["stopBits"] | 1;
   configData.updateInterval = doc["updateInterval"] | 5000;
-  
-  strlcpy(configData.deviceName, 
-          doc["deviceName"] | "XY-SK120", 
+
+  strlcpy(configData.deviceName,
+          doc["deviceName"] | "XY-SK120",
           sizeof(configData.deviceName));
-          
+
   Serial.println("Config loaded");
   return true;
 }
 
 bool saveConfig() {
   DynamicJsonDocument doc(1024);
-  
+
   doc["modbusId"] = configData.modbusId;
   doc["baudRate"] = configData.baudRate;
   doc["dataBits"] = configData.dataBits;
@@ -75,7 +75,7 @@ bool saveConfig() {
 
   serializeJson(doc, configFile);
   configFile.close();
-  
+
   Serial.println("Config saved");
   return true;
 }
