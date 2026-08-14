@@ -1,334 +1,258 @@
-import { elements } from './modules/elements_registry.js';
-import { initSwipeCards, forceReinitSwipeCards, setupOperatingModeTabs } from './modules/menu_interface.js';
-import { 
-  initWebSocket, 
-  requestPsuStatus, 
-  requestOperatingMode, 
-  websocketConnected,
-  startPeriodicUpdates,
-  sendCommand
-} from '../js/menu_connection.js';
-import { setVoltageValue, setCurrentValue, initPowerButton, initBasicControls } from './modules/menu_basic.js';
-import { updateUI } from './modules/menu_display.js';
-import { initDeviceManager } from './modules/device_manager.js';
-import { initWifiSettings } from './modules/menu_settings.js';
+const $ = (id) => document.getElementById(id);
+const fmt = (v, d = 2) => (isNaN(v) ? "--" : Number(v).toFixed(d));
 
-// Global state
-let lastDataUpdate = 0;
-let darkMode = localStorage.getItem('darkMode') === 'true';
+// ---- WebSocket: the server pushes fresh status on its own ----
+let ws = null;
+let connected = false;
 
-// Apply theme immediately
-applyTheme(darkMode);
-
-// Updated applyTheme function to handle checkbox state properly
-function applyTheme(isDark) {
-  if (isDark) {
-    document.documentElement.classList.add('dark');
-  } else {
-    document.documentElement.classList.remove('dark');
-  }
-  
-  // Update theme color meta tag
-  const themeColorMeta = document.getElementById('theme-color');
-  if (themeColorMeta) {
-    themeColorMeta.setAttribute('content', isDark ? '#121212' : '#2c3e50');
-  }
-}
-
-// Fetch data from device - fallback to REST API if WebSocket is not available
-function fetchData() {
-  console.log("Fetching data from API...");
-  
-  if (websocketConnected) {
-    requestPsuStatus();
-    return;
-  }
-  
-  // Fallback to REST API
-  fetch('/api/data')
-    .then(response => response.json())
-    .then(data => {
-      console.log("Data received from REST API:", data);
-      updateUI(data);
-      lastDataUpdate = Date.now();
-    })
-    .catch(error => {
-      console.error('Error fetching data:', error);
-    });
-}
-
-// Initialize the application with better WebSocket handling
-document.addEventListener('DOMContentLoaded', function() {
-    console.log('DOM content loaded, initializing application...');
-    
-    // Log WebSocket support
-    if ('WebSocket' in window) {
-        console.log('✅ WebSocket is supported by this browser');
-    } else {
-        console.error('❌ WebSocket is NOT supported by this browser');
-    }
-    
-    // Add debugging tools
-    window.debugInfo = {
-        testConnection,
-        reinitWebSocket: initWebSocket,
-        sendManualCommand: sendCommand,
-        requestStatus: requestPsuStatus
-    };
-    
-    // Allow more time for slow connections to initialize
-    setTimeout(init, 500);
-});
-
-// Testing function for connection troubleshooting
-function testConnection() {
-  console.log("Testing connection...");
-  
-  // Test WebSocket
-  if (websocketConnected) {
-    console.log("WebSocket connected: YES");
-  } else {
-    console.log("WebSocket connected: NO");
-    console.log("Attempting connection...");
-    initWebSocket();
-  }
-  
-  // Test critical elements
-  const powerToggle = document.getElementById('power-toggle');
-  const voltageInput = document.getElementById('set-voltage');
-  const voltageButton = document.getElementById('apply-voltage');
-  
-  console.log("Power toggle found:", !!powerToggle);
-  console.log("Voltage input found:", !!voltageInput);
-  console.log("Voltage button found:", !!voltageButton);
-  
-  // Try sending a command
-  console.log("Attempting to send status request...");
-  const success = sendCommand({ action: 'getStatus' });
-  console.log("Command send result:", success);
-  
-  return {
-    websocketConnected,
-    powerToggleExists: !!powerToggle,
-    voltageInputExists: !!voltageInput,
-    voltageButtonExists: !!voltageButton,
-    commandSent: success
+function connect() {
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+  ws.onopen = () => {
+    connected = true;
+    setConn(false);
+    loadWifiStatus();
   };
+  ws.onclose = () => {
+    connected = false;
+    setConn(true);
+    setTimeout(connect, 1000);
+  };
+  ws.onerror = () => ws.close();
+  ws.onmessage = (e) => handleMessage(e.data);
 }
 
-// Function to initialize the UI and components with better error handling
-function init() {
-    console.log("Initializing application components...");
-    
-    try {
-        // Initialize device manager first to ensure connection settings are loaded
-        initDeviceManager();
-        
-        // Initialize WebSocket with multiple attempts
-        initWebSocket();
-        
-        // Initialize UI components
-        initPowerButton();
-        initBasicControls();
-        
-        // Set up event listeners after elements are available
-        setupEventListeners();
-        
-        // Start periodic updates with fallback mechanisms
-        setTimeout(startPeriodicUpdates, 1500);
-        
-        // Force data refresh after 2 seconds - fallback to HTTP if WebSocket fails
-        setTimeout(() => {
-            if (!websocketConnected) {
-                console.log("WebSocket not connected after 2 seconds, trying HTTP fallback");
-                fetch('/api/data')
-                    .then(response => response.json())
-                    .then(data => {
-                        updateUI(data);
-                        console.log("Initial data loaded via HTTP");
-                    })
-                    .catch(error => {
-                        console.error('Error fetching data via HTTP:', error);
-                    });
-            }
-        }, 2000);
-        
-        // Setup reconnect button with clearer feedback
-        const reconnectBtn = document.getElementById('reconnect-btn');
-        if (reconnectBtn) {
-            reconnectBtn.addEventListener('click', () => {
-                console.log("Manual reconnect requested");
-                
-                // Update status display
-                const statusElement = document.getElementById('websocket-status');
-                if (statusElement) {
-                    statusElement.textContent = 'Reconnecting...';
-                    statusElement.className = 'text-secondary font-bold';
-                }
-                
-                // Get current device IP
-                const currentDevice = localStorage.getItem('selectedDeviceIP') || 'localhost';
-                
-                // Try to reconnect
-                initWebSocket();
-                
-                // Provide feedback
-                alert(`Reconnecting to: ${currentDevice}`);
-            });
-        }
-        
-        console.log("Application initialization complete");
-    } catch (err) {
-        console.error("Error during initialization:", err);
-        
-        // Try to recover by using the HTTP API
-        fetch('/api/data')
-            .then(response => response.json())
-            .then(data => updateUI(data))
-            .catch(error => console.error('Recovery attempt failed:', error));
-    }
+function send(obj) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(obj));
+  }
 }
 
-// Enhanced event listener setup with resilience
-function setupEventListeners() {
-    // Voltage and current controls
-    attachClickHandler('apply-voltage', setVoltageValue);
-    attachClickHandler('apply-current', setCurrentValue);
-    attachClickHandler('refresh-psu', () => {
-        requestPsuStatus();
-        requestOperatingMode();
-    });
-    
-    // Theme toggle with peer-based styling
-    const themeCheckbox = document.getElementById('theme-checkbox');
-    if (themeCheckbox) {
-        themeCheckbox.checked = darkMode;
-        themeCheckbox.addEventListener('change', toggleDarkMode);
-    }
-    
-    // Setup voltage preset popup
-    setupVoltagePresetPopup();
-    
-    // Document visibility changes
-    document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') {
-            requestPsuStatus();
-            requestOperatingMode();
-        }
-    });
+// ---- Rendering ----
+function setConn(offline) {
+  const dot = $("conn");
+  dot.className = offline ? "dot dot-off" : "dot dot-on";
+  $("connText").textContent = offline ? "offline" : "online";
 }
 
-// Helper function to safely attach click handlers
-function attachClickHandler(id, handler) {
-    const element = document.getElementById(id);
-    if (element) {
-        // Remove any existing handlers first (to prevent duplicates)
-        const newElement = element.cloneNode(true);
-        element.parentNode.replaceChild(newElement, element);
-        newElement.addEventListener('click', handler);
-    } else {
-        console.warn(`Element with ID "${id}" not found for click handler`);
-    }
+function fmtTime(sec) {
+  if (isNaN(sec)) return "--";
+  sec = Math.max(0, Math.floor(Number(sec)));
+  const h = String(Math.floor(sec / 3600)).padStart(2, "0");
+  const m = String(Math.floor((sec % 3600) / 60)).padStart(2, "0");
+  const s = String(sec % 60).padStart(2, "0");
+  return `${h}:${m}:${s}`;
 }
 
-// Setup voltage preset popup
-function setupVoltagePresetPopup() {
-    const presetButton = document.getElementById('voltage-preset-btn');
-    const popup = document.getElementById('voltage-popup');
-    const overlay = document.getElementById('voltage-overlay');
-    
-    if (!presetButton || !popup || !overlay) {
-        console.warn('Voltage preset elements not found');
-        return;
-    }
-    
-    // Open popup when button is clicked
-    presetButton.addEventListener('click', () => {
-        popup.classList.remove('hidden');
-        popup.classList.add('flex');
-        overlay.classList.remove('hidden');
-        document.body.classList.add('popup-open');
-    });
-    
-    // Close popup when overlay is clicked
-    overlay.addEventListener('click', closePopup);
-    
-    // Handle voltage selection
-    const voltageOptions = popup.querySelectorAll('div[data-voltage]');
-    voltageOptions.forEach(option => {
-        option.addEventListener('click', () => {
-            const voltage = option.getAttribute('data-voltage');
-            const voltageInput = document.getElementById('set-voltage');
-            
-            if (voltageInput && voltage) {
-                voltageInput.value = voltage;
-                
-                // Close popup after selection
-                closePopup();
-            }
-        });
-    });
-    
-    function closePopup() {
-        popup.classList.add('hidden');
-        popup.classList.remove('flex');
-        overlay.classList.add('hidden');
-        document.body.classList.remove('popup-open');
-    }
+// Only touch an input if the user isn't currently editing it
+const editable = (id) => !document.activeElement || document.activeElement.id !== id;
+
+function renderStatus(s) {
+  if (!s) return;
+  const on = !!s.outputEnabled;
+  $("voltage").textContent = fmt(s.voltage);
+  $("current").textContent = fmt(s.current, 3);
+  $("power").textContent = fmt(s.power);
+  $("mode").textContent = s.operatingMode || "--";
+  $("mode").className = "badge " + String(s.operatingMode || "?").toLowerCase();
+  $("modeName").textContent = s.operatingModeName || "--";
+  $("inputVoltage").textContent = `Uin ${fmt(s.inputVoltage)}V`;
+  $("setValue").textContent = fmt(s.setValue);
+
+  if (s.deviceName) $("deviceName").textContent = s.deviceName;
+
+  // Protection status badge
+  const ps = $("protStatus");
+  const code = Number(s.protectionStatus);
+  if (!isNaN(code) && code > 0) {
+    ps.textContent = s.protectionText || `Prot#${code}`;
+    ps.className = "badge badge-warn";
+    ps.title = s.protectionText || "";
+  } else {
+    ps.textContent = "OK";
+    ps.className = "badge badge-ok";
+    ps.title = "Normal";
+  }
+
+  // Energy & temperatures
+  $("ampHours").textContent = `${fmt(s.ampHours, 3)} Ah`;
+  $("wattHours").textContent = `${fmt(s.wattHours, 3)} Wh`;
+  $("outputTime").textContent = fmtTime(s.outputTime);
+  $("internalTemp").textContent = `${fmt(s.internalTemp, 1)} ${s.tempCelsius ? "°C" : "°F"}`;
+  $("externalTemp").textContent = `${fmt(s.externalTemp, 1)} ${s.tempCelsius ? "°C" : "°F"}`;
+
+  // Protection inputs
+  if (editable("pOvp")) $("pOvp").value = fmt(s.ovp);
+  if (editable("pOcp")) $("pOcp").value = fmt(s.ocp, 3);
+  if (editable("pOpp")) $("pOpp").value = fmt(s.opp, 1);
+  if (editable("pLvp")) $("pLvp").value = fmt(s.lvp);
+  if (editable("pOtp")) $("pOtp").value = fmt(s.otp, 1);
+  if (editable("pOhpH")) $("pOhpH").value = s.ohpHours != null ? s.ohpHours : "";
+  if (editable("pOhpM")) $("pOhpM").value = s.ohpMinutes != null ? s.ohpMinutes : "";
+  if (editable("pOha")) $("pOha").value = fmt(s.overAmpHours, 3);
+  if (editable("pOwh")) $("pOwh").value = fmt(s.overWattHours, 1);
+  if (editable("pIni")) $("pIni").checked = !!s.outputOnAtStartup;
+
+  // Settings inputs
+  if (editable("cBacklight")) $("cBacklight").value = s.backlight != null ? s.backlight : "";
+  if (editable("cSleep")) $("cSleep").value = s.sleepTimeout != null ? s.sleepTimeout : "";
+  if (editable("cSlave")) $("cSlave").value = s.slaveAddress != null ? s.slaveAddress : "";
+  if (editable("cBaud")) $("cBaud").value = s.baudRateCode != null ? String(s.baudRateCode) : "6";
+  if (editable("cTempUnit")) $("cTempUnit").value = s.tempCelsius ? "c" : "f";
+  if (editable("cBeeper")) $("cBeeper").checked = !!s.beeper;
+  if (editable("cMppt")) $("cMppt").checked = !!s.mpptEnabled;
+  if (editable("cMpptThr")) $("cMpptThr").value = s.mpptThreshold != null ? fmt(s.mpptThreshold) : "";
+  if (editable("cBtf")) $("cBtf").value = fmt(s.batteryCutoff, 3);
+  if (editable("cMemGroup")) $("cMemGroup").value = s.memoryGroup != null ? String(s.memoryGroup) : "0";
+
+  const btn = $("outBtn");
+  btn.textContent = on ? "ВЫКЛ" : "ВКЛ";
+  btn.className = "btn " + (on ? "btn-danger" : "btn-success");
+
+  $("keyLock").textContent = s.keyLockEnabled ? "Замок вкл" : "Замок выкл";
+  $("keyLock").className = "btn btn-sm " + (s.keyLockEnabled ? "btn-warning" : "btn-ghost");
+
+  if (editable("vIn")) $("vIn").value = fmt(s.voltageSet);
+  if (editable("iIn")) $("iIn").value = fmt(s.currentSet, 3);
+
+  $("model").textContent = `Model ${s.model} / v${s.version}`;
 }
 
-// Toggle dark mode function 
-function toggleDarkMode() {
-  darkMode = !darkMode;
-  localStorage.setItem('darkMode', darkMode);
-  applyTheme(darkMode);
+function renderWifi(s) {
+  $("wifiSsid").textContent = s.ssid || "--";
+  $("wifiIp").textContent = s.ip || "--";
+  $("wifiRssi").textContent = s.rssi != null ? `${s.rssi} dBm` : "--";
 }
 
-// Fetch WiFi status
-function fetchWifiStatus() {
-  fetch('/api/wifi/status')
-    .then(response => response.json())
-    .then(data => {
-      if (elements.wifiStatus) elements.wifiStatus.textContent = data.status;
-      if (elements.wifiStatus) elements.wifiStatus.className = 'status-value ' + (data.status === 'connected' ? 'connected' : 'error');
-      if (elements.wifiSsid) elements.wifiSsid.textContent = data.ssid || 'Not connected';
-      if (elements.wifiIp) elements.wifiIp.textContent = data.ip || 'None';
-      
-      // Convert RSSI to a more user-friendly format
-      if (elements.wifiRssi) {
-        const rssi = parseInt(data.rssi);
-        let signalStrength = '';
-        
-        if (rssi >= -50) {
-          signalStrength = 'Excellent';
-        } else if (rssi >= -65) {
-          signalStrength = 'Good';
-        } else if (rssi >= -75) {
-          signalStrength = 'Fair';
-        } else if (rssi >= -85) {
-          signalStrength = 'Weak';
-        } else {
-          signalStrength = 'Very Weak';
-        }
-        
-        elements.wifiRssi.textContent = `${signalStrength} (${rssi} dBm)`;
+// ---- Message handling ----
+function handleMessage(raw) {
+  let msg;
+  try { msg = JSON.parse(raw); } catch { return; }
+  switch (msg.action) {
+    case "statusResponse":
+      renderStatus(msg);
+      break;
+    case "wifiStatusResponse":
+      renderWifi(msg.wifiStatus ? JSON.parse(msg.wifiStatus) : msg);
+      break;
+    case "powerOutputResponse":
+      if (msg.error) toast(msg.error);
+      break;
+    case "setVoltageResponse":
+    case "setCurrentResponse":
+      if (msg.error) toast(msg.error);
+      break;
+    case "setKeyLockResponse":
+    case "keyLockResponse":
+      if (msg.locked != null) {
+        $("keyLock").textContent = msg.locked ? "Замок вкл" : "Замок выкл";
+        $("keyLock").className = "btn btn-sm " + (msg.locked ? "btn-warning" : "btn-ghost");
       }
-    })
-    .catch(error => {
-      console.error('Error fetching WiFi status:', error);
-    });
+      break;
+    case "connectWifiResponse":
+      if (msg.success) { toast(`Подключено к ${msg.ssid}`); loadWifiStatus(); }
+      else toast(msg.error || "Не удалось подключиться");
+      break;
+    case "addWifiNetworkResponse":
+      toast(msg.success ? "Сеть сохранена" : "Ошибка сохранения сети");
+      break;
+  }
+  // Toast failures from device-setting responses
+  if (msg.action && msg.action.endsWith("Response") && msg.success === false && msg.error) {
+    toast(msg.error);
+  }
 }
 
-// Utility function for debouncing
-function debounce(func, wait) {
-  let timeout;
-  return function(...args) {
-    clearTimeout(timeout);
-    timeout = setTimeout(() => func.apply(this, args), wait);
-  };
+function toast(t) {
+  const el = $("toast");
+  el.textContent = t;
+  el.classList.add("show");
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.remove("show"), 2500);
 }
 
-// Initialize on DOM ready
-document.addEventListener('DOMContentLoaded', init);
+// ---- Actions ----
+function toggleOutput() {
+  const on = $("outBtn").textContent === "ВКЛ";
+  send({ action: "powerOutput", enable: on });
+}
 
-export { fetchData };
+function setVoltage() {
+  const v = parseFloat($("vIn").value);
+  if (isNaN(v)) return;
+  send({ action: "setVoltage", voltage: v });
+}
+
+function setCurrent() {
+  const i = parseFloat($("iIn").value);
+  if (isNaN(i)) return;
+  send({ action: "setCurrent", current: i });
+}
+
+function toggleKeyLock() {
+  const lock = !($("keyLock").textContent.startsWith("Замок вкл"));
+  send({ action: "setKeyLock", lock });
+}
+
+function loadWifiStatus() {
+  send({ action: "getWifiStatus" });
+}
+
+function addNetwork() {
+  const ssid = $("wifiNewSsid").value.trim();
+  const password = $("wifiNewPass").value;
+  if (!ssid) { toast("Введите SSID"); return; }
+  send({ action: "addWifiNetwork", ssid, password, priority: 1 });
+  $("wifiNewPass").value = "";
+}
+
+// Map table-row [data-action] buttons to their inputs and build the command
+function applyRow(action) {
+  switch (action) {
+    case "ovp": send({ action: "setProtection", key: "ovp", value: parseFloat($("pOvp").value) }); break;
+    case "ocp": send({ action: "setProtection", key: "ocp", value: parseFloat($("pOcp").value) }); break;
+    case "opp": send({ action: "setProtection", key: "opp", value: parseFloat($("pOpp").value) }); break;
+    case "lvp": send({ action: "setProtection", key: "lvp", value: parseFloat($("pLvp").value) }); break;
+    case "otp": send({ action: "setProtection", key: "otp", value: parseFloat($("pOtp").value) }); break;
+    case "ohp": send({ action: "setOhp", hours: parseInt($("pOhpH").value) || 0, minutes: parseInt($("pOhpM").value) || 0 }); break;
+    case "oha": send({ action: "setOha", ampHours: parseFloat($("pOha").value) }); break;
+    case "owh": send({ action: "setOwh", wattHours: parseFloat($("pOwh").value) }); break;
+    case "ini": send({ action: "setPowerOnInit", enabled: $("pIni").checked }); break;
+    case "backlight": send({ action: "setBacklight", level: parseInt($("cBacklight").value) }); break;
+    case "sleep": send({ action: "setSleepTimeout", minutes: parseInt($("cSleep").value) }); break;
+    case "slave": send({ action: "setSlaveAddress", address: parseInt($("cSlave").value) }); break;
+    case "baud": send({ action: "setBaudRate", code: parseInt($("cBaud").value) }); break;
+    case "tempunit": send({ action: "setTempUnit", celsius: $("cTempUnit").value === "c" }); break;
+    case "beeper": send({ action: "setBeeper", enabled: $("cBeeper").checked }); break;
+    case "mppt": send({ action: "setMppt", enable: $("cMppt").checked, threshold: parseFloat($("cMpptThr").value) || 0.8 }); break;
+    case "btf": send({ action: "setBatteryCutoff", current: parseFloat($("cBtf").value) }); break;
+    case "memgroup": send({ action: "setMemoryGroup", group: parseInt($("cMemGroup").value) }); break;
+  }
+}
+
+// ---- Boot ----
+document.addEventListener("DOMContentLoaded", () => {
+  $("outBtn").addEventListener("click", toggleOutput);
+  $("vSetBtn").addEventListener("click", setVoltage);
+  $("iSetBtn").addEventListener("click", setCurrent);
+  $("keyLock").addEventListener("click", toggleKeyLock);
+  $("wifiAddBtn").addEventListener("click", addNetwork);
+  $("wifiRefresh").addEventListener("click", loadWifiStatus);
+  $("psuResetBtn").addEventListener("click", () => {
+    if (confirm("Сбросить БП к заводским настройкам?")) send({ action: "psuReset" });
+  });
+  $("restartBtn").addEventListener("click", () => {
+    if (confirm("Перезапустить ESP32?")) send({ action: "restart" });
+  });
+
+  // All [data-action] "ok" buttons
+  document.querySelectorAll(".editable .btn[data-action]").forEach((btn) => {
+    btn.addEventListener("click", () => applyRow(btn.dataset.action));
+  });
+
+  $("vIn").addEventListener("keydown", (e) => { if (e.key === "Enter") setVoltage(); });
+  $("iIn").addEventListener("keydown", (e) => { if (e.key === "Enter") setCurrent(); });
+
+  connect();
+  setInterval(loadWifiStatus, 30000);
+});

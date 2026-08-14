@@ -1,242 +1,150 @@
-/* Import main CSS file */
-@import url('css/main.css');
-
-/* Add custom heartbeat styles to override the animation in the HTML */
-.auto-refresh-indicator .dot {
-    transition: opacity 0.4s ease-in-out, background-color 0.5s ease;
-    opacity: 0.4;
-    animation: none; /* Disable the automatic animation */
+:root {
+  --bg: #0b0e14;
+  --card: #151a24;
+  --border: #232b3a;
+  --text: #e6ebf2;
+  --muted: #8792a6;
+  --accent: #3b82f6;
+  --green: #22c55e;
+  --red: #ef4444;
+  --amber: #f59e0b;
 }
 
-/* When the connection is slow, add a slow pulse instead */
-.auto-refresh-indicator.slow .dot {
-    animation: slowPulse 3s infinite;
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
-@keyframes slowPulse {
-    0%, 100% { opacity: 0.2; }
-    50% { opacity: 0.6; }
+header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
 }
 
-/* Responsive sizing for readings display */
-.readings-row {
-    padding: 0;
-    margin: 0;
+header h1 { font-size: 1.2rem; font-weight: 600; }
+header .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+.dot-on { background: var(--green); box-shadow: 0 0 8px var(--green); }
+.dot-off { background: var(--red); }
+#connText { color: var(--muted); font-size: 0.85rem; }
+
+main {
+  flex: 1;
+  max-width: 640px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 20px;
+  display: grid;
+  gap: 16px;
 }
 
-/* Make the units slightly smaller than the readings */
-.reading-unit {
-    font-size: 0.7em;
-    vertical-align: middle;
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px;
 }
 
-/* Ensure consistent height for all values */
-.reading-value {
-    line-height: 1.2;
-    min-height: 2.4rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+.card h2 {
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
-/* Responsive font sizes that scale with viewport width */
-@media (max-width: 480px) {
-    .readings-row {
-        font-size: 80%;
-    }
-    
-    .readings-row .text-xl {
-        font-size: 1.1rem;
-    }
-    
-    .reading-item p:first-child {
-        margin-bottom: 2px;
-    }
-}
+.row { display: flex; gap: 10px; align-items: center; margin-top: 10px; }
+.row.big { margin-top: 0; }
 
-/* Extremely small screens like phones in portrait orientation */
-@media (max-width: 360px) {
-    .readings-row {
-        font-size: 70%;
-    }
-    
-    .readings-row .text-xl {
-        font-size: 1rem;
-    }
-    
-    .reading-item {
-        padding: 0.125rem;
-    }
-}
+.val { flex: 1; text-align: center; }
+.val label { display: block; color: var(--muted); font-size: 0.75rem; margin-bottom: 2px; }
+output { font-size: 2rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 
-/* Override any existing padding in main section */
-.compact-readings {
-    padding: 0.5rem 0.25rem;
-}
+.badge { background: var(--border); color: var(--text); padding: 3px 10px; border-radius: 999px; font-size: 0.8rem; font-weight: 600; }
+.badge.cv { background: rgba(34,197,94,.15); color: var(--green); }
+.badge.cc { background: rgba(59,130,246,.15); color: var(--accent); }
+.badge.cp { background: rgba(245,158,11,.15); color: var(--amber); }
+.badge-ok { background: rgba(34,197,94,.15); color: var(--green); }
+.badge-warn { background: rgba(239,68,68,.15); color: var(--red); }
 
-.compact-readings .px-6 {
-    padding-left: 0.5rem;
-    padding-right: 0.5rem;
+.btn {
+  border: none;
+  border-radius: 10px;
+  padding: 12px 18px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  color: #fff;
+  background: var(--accent);
+  transition: filter .15s;
 }
+.btn:hover { filter: brightness(1.1); }
+.btn:active { filter: brightness(.9); }
+.btn-sm { padding: 8px 12px; font-size: 0.85rem; }
+.btn-success { background: var(--green); }
+.btn-danger { background: var(--red); }
+.btn-warning { background: var(--amber); }
+.btn-primary { background: var(--accent); }
+.btn-ghost { background: var(--border); color: var(--text); }
 
-.compact-readings .py-4 {
-    padding-top: 0.5rem;
-    padding-bottom: 0.5rem;
+input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 1rem;
+  flex: 1;
+  font-variant-numeric: tabular-nums;
 }
+input:focus { outline: 2px solid var(--accent); }
 
-/* Log Viewer Overlay Fixes - ensure it appears properly and DOUBLE the height */
-#log-viewer-overlay {
-    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
-    z-index: 9999 !important; /* Ensure it appears on top */
-    bottom: 0;
-    left: 0;
-    right: 0;
-    position: fixed !important; /* Force fixed position */
-    height: 33.33vh !important; /* Double the height from 16.67vh to 33.33vh (1/3 of viewport) */
-    transform: translateY(100%);
-    transition: transform 0.3s ease-in-out;
-    padding: 8px !important; /* Reduce padding for more compact layout */
-    -webkit-transform: translateY(100%);
-    -webkit-transition: -webkit-transform 0.3s ease-in-out;
+select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 9px 10px;
+  font-size: 0.95rem;
+  flex: 1;
 }
+select:focus { outline: 2px solid var(--accent); }
 
-#log-viewer-overlay.active {
-    transform: translateY(0) !important;
-    -webkit-transform: translateY(0) !important;
-}
+input[type="checkbox"] { flex: 0 0 auto; width: 22px; height: 22px; accent-color: var(--accent); }
 
-/* Make sure the log content scrolls properly - adjust height to match the doubled overlay height */
-#log-container {
-    font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
-    line-height: 1.4;
-    max-height: calc(33.33vh - 40px) !important; /* Reduce from 60px to 40px for header */
-    overflow-y: auto !important;
-    -webkit-overflow-scrolling: touch;
-    overflow-y: scroll !important;
-}
+table { width: 100%; border-collapse: collapse; }
+td { padding: 6px 0; font-size: 0.95rem; }
+td:first-child { color: var(--muted); }
 
-/* Ensure settings tab active state is clearly visible */
-.settings-tab.border-secondary {
-    border-bottom-color: #3498db !important;
-    border-bottom-width: 2px !important;
-    opacity: 1 !important;
-}
+table.editable td:first-child { width: 45%; }
+table.editable .ctrl { display: flex; gap: 6px; align-items: center; }
+table.editable input { flex: 1; min-width: 0; }
 
-.settings-tab.text-secondary {
-    color: #3498db !important;
-    opacity: 1 !important;
+#toast {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 10px 18px;
+  border-radius: 10px;
+  opacity: 0;
+  pointer-events: none;
+  transition: all .25s;
+  z-index: 10;
 }
+#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
-/* Make hidden elements truly hidden */
-.hidden {
-    display: none !important;
-}
-
-/* Dark mode support for log viewer */
-.dark #log-viewer-overlay {
-    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.3);
-}
-
-.dark .log-entry {
-    border-color: rgba(75, 85, 99, 0.5);
-    border-bottom: 1px dotted rgba(255, 255, 255, 0.1);
-}
-
-/* Hover effect for logs */
-.log-entry:hover {
-    background-color: rgba(0, 0, 0, 0.05);
-}
-
-.dark .log-entry:hover {
-    background-color: rgba(255, 255, 255, 0.05);
-}
-
-/* Make the overlay draggable to resize */
-#log-viewer-overlay {
-    resize: vertical;
-    overflow: auto;
-    min-height: 10vh;
-    max-height: 50vh;
-}
-
-/* Style for timestamp part of logs */
-.log-entry .timestamp {
-    opacity: 0.7;
-}
-
-/* Style for IP part of logs */
-.log-entry .ip {
-    opacity: 0.8;
-    font-style: italic;
-}
-
-/* Animations */
-@keyframes fadeInUp {
-    from {
-        opacity: 0;
-        transform: translateY(10px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
-.log-entry {
-    animation: fadeInUp 0.2s ease-out;
-    padding: 3px 0;
-    word-break: break-word;
-    white-space: pre-wrap;
-    border-bottom: 1px dotted rgba(0, 0, 0, 0.1);
-    font-size: 11px;
-    line-height: 1.3;
-}
-
-/* Make the log viewer controls always visible */
-#log-viewer-overlay .flex.space-x-2 button {
-    min-width: 50px;
-}
-
-/* Compact button styling for log viewer */
-#log-viewer-overlay button {
-    border-radius: 4px;
-    transition: background-color 0.15s;
-}
-
-#log-viewer-overlay button:hover {
-    background-color: rgba(0, 0, 0, 0.05);
-}
-
-.dark #log-viewer-overlay button:hover {
-    background-color: rgba(255, 255, 255, 0.1);
-}
-
-/* Compact checkbox styling */
-#log-viewer-overlay .form-checkbox {
-    border-radius: 3px;
-    cursor: pointer;
-}
-
-#log-viewer-overlay label {
-    cursor: pointer;
-    user-select: none;
-}
-
-/* Ensure the header text is properly sized */
-#log-viewer-overlay h3 {
-    font-size: 0.95rem;
-    margin: 0;
-}
-
-/* WebSocket logs button styling */
-#open-logs-btn {
-    transition: background-color 0.2s ease-in-out;
-}
-
-#open-logs-btn:hover {
-    background-color: #2980b9;
-}
-
-#open-logs-btn:active {
-    transform: translateY(1px);
-}
+footer { padding: 12px; text-align: center; color: var(--muted); font-size: 0.8rem; }

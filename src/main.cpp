@@ -232,11 +232,12 @@ void loop() {
   // processMqttMessages();
   
   // Add any periodic tasks here
-  // For example, you could update a status display every few seconds
+  // Server-side PSU polling: read fresh status and push it to all WebSocket
+  // clients. This is how the UI gets live data - the client never polls.
   static unsigned long lastStatusUpdate = 0;
-  if (millis() - lastStatusUpdate > 5000) { // Every 5 seconds
+  if (millis() - lastStatusUpdate > 250) { // Poll as fast as Modbus allows
     lastStatusUpdate = millis();
-    // Perform any periodic updates here
+    pollAndBroadcastPSUStatus();
   }
   
   // Check for WiFi reset button press during operation

@@ -2,17 +2,22 @@
 #define WEB_INTERFACE_H
 
 #include <ESPAsyncWebServer.h>
+#include <ArduinoJson.h>
 #include "XY-SKxxx.h"  // Keep this include to fix the compilation error
 
 void setupWebServer(AsyncWebServer* server);
 void handleWebSocketMessage(AsyncWebSocket* webSocket, AsyncWebSocketClient* client, 
                            AwsFrameInfo* info, uint8_t* data, size_t len);
+void handleDeviceSettingAction(AsyncWebSocketClient* client, const String& action, DynamicJsonDocument& doc);
 String getContentType(String filename);
 bool handleFileRead(AsyncWebServerRequest *request);
 
 // New unified status functions
 void sendCompletePSUStatus(AsyncWebSocketClient* client);
 void sendOperatingModeDetails(AsyncWebSocketClient* client);
+
+// Server-side polling: read fresh PSU status and push it to all connected clients
+void pollAndBroadcastPSUStatus();
 
 // PSU helper functions
 float getPSUVoltage(XY_SKxxx* powerSupply);
