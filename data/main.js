@@ -308,6 +308,15 @@ function setCurrent() {
   send({ action: "setCurrent", current: i });
 }
 
+// Step the voltage/current setpoint by a fixed delta and apply it
+function stepSetpoint(which, delta, decimals) {
+  const input = $(which);
+  const cur = parseFloat(input.value);
+  const next = (isNaN(cur) ? 0 : cur) + delta;
+  input.value = next.toFixed(decimals);
+  if (which === "vIn") setVoltage(); else setCurrent();
+}
+
 function toggleKeyLock() {
   send({ action: "setKeyLock", lock: !($("keyLock").textContent === "🔒") });
 }
@@ -393,6 +402,29 @@ document.addEventListener("DOMContentLoaded", () => {
 
   $("vIn").addEventListener("keydown", (e) => { if (e.key === "Enter") setVoltage(); });
   $("iIn").addEventListener("keydown", (e) => { if (e.key === "Enter") setCurrent(); });
+
+  // Step buttons for voltage/current with auto-repeat while held
+  const addStepHandler = (id, target, delta, decimals) => {
+    const el = $(id);
+    let timer = null;
+    const step = () => stepSetpoint(target, delta, decimals);
+    const start = (e) => {
+      e.preventDefault();
+      step();
+      timer = setInterval(step, 120);
+    };
+    const stop = () => clearInterval(timer);
+    el.addEventListener("mousedown", start);
+    el.addEventListener("touchstart", start, { passive: false });
+    el.addEventListener("mouseup", stop);
+    el.addEventListener("mouseleave", stop);
+    el.addEventListener("touchend", stop);
+    el.addEventListener("touchcancel", stop);
+  };
+  addStepHandler("vMinus", "vIn", -0.1, 2);
+  addStepHandler("vPlus", "vIn", 0.1, 2);
+  addStepHandler("iMinus", "iIn", -0.01, 3);
+  addStepHandler("iPlus", "iIn", 0.01, 3);
 
   connect();
   setInterval(loadWifiStatus, 30000);

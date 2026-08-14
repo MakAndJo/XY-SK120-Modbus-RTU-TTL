@@ -39,7 +39,7 @@ header .dot { display: inline-block; width: 10px; height: 10px; border-radius: 5
 .dot-off { background: var(--red); }
 #connText { color: var(--muted); font-size: 0.85rem; }
 
-.header-row { display: flex; align-items: center; gap: 8px; }
+.header-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .device-bar { display: flex; gap: 8px; align-items: center; }
 .device-select { flex: 1; }
 
@@ -80,7 +80,9 @@ main {
 }
 
 .row { display: flex; gap: 10px; align-items: center; }
+.row + .row { margin-top: 8px; }
 .row.big { margin-top: 0; }
+.row > .btn-sm { width: 3em; flex: 0 0 auto; }
 .col { display: flex; flex-direction: column; gap: 0.5em; }
 .col.big { gap:0; }
 .col.control {
@@ -114,6 +116,7 @@ output { font-size: 4em; font-weight: 700; line-height: 1; font-variant-numeric:
   padding: 12px 18px;
   font-size: 1rem;
   font-weight: 600;
+  line-height: 1;
   cursor: pointer;
   color: #fff;
   background: var(--accent);

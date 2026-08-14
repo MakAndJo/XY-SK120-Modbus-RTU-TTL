@@ -10,25 +10,31 @@
 <body>
   <header>
     <div class="header-row">
-      <h1><span id="deviceName">XY PSU</span> <span id="conn">·</span></h1>
-      <span id="connText">offline</span>
-    </div>
-    <div class="device-bar">
-      <select id="deviceSelect" class="device-select"></select>
-      <button id="devAddBtn" class="btn btn-sm btn-primary">+</button>
-      <button id="devDelBtn" class="btn btn-sm btn-ghost" title="Удалить устройство">✕</button>
-    </div>
-    <div id="addForm" class="hidden">
-      <input id="newName" type="text" placeholder="Имя (PSU)">
-      <input id="newIp" type="text" placeholder="192.168.1.100">
-      <button id="addOk" class="btn btn-sm btn-primary">OK</button>
-      <button id="addCancel" class="btn btn-sm btn-ghost">Нет</button>
+      <h1><span id="deviceName">XY PSU</span></h1>
+      <div class="row">
+        <span id="conn"></span>
+        <span id="connText">offline</span>
+      </div>
     </div>
   </header>
 
   <!-- Tab: Главная -->
   <main id="page-main" class="tabpage">
-    <section class="card" id="live">
+    <section>
+      <div class="device-bar">
+        <select id="deviceSelect" class="device-select"></select>
+        <button id="devAddBtn" class="btn btn-sm btn-primary">+</button>
+        <button id="devDelBtn" class="btn btn-sm btn-ghost" title="Удалить устройство">✕</button>
+      </div>
+      <div id="addForm" class="hidden">
+        <input id="newName" type="text" placeholder="Имя (PSU)">
+        <input id="newIp" type="text" placeholder="192.168.1.100">
+        <button id="addOk" class="btn btn-sm btn-primary">OK</button>
+        <button id="addCancel" class="btn btn-sm btn-ghost">Нет</button>
+      </div>
+    </section>
+
+    <section class="card" id="live" style="user-select: none;">
       <div class="row">
         <div class="col big" style="flex: 1;margin: -6px 0;">
           <div class="val"><output id="voltage">--</output></div>
@@ -51,8 +57,14 @@
     <section class="card">
       <h2>Установка</h2>
       <div class="row">
+        <button id="vMinus" class="btn btn-sm btn-ghost">−</button>
         <input id="vIn" type="number" step="0.01" min="0" max="150" placeholder="V">
+        <button id="vPlus" class="btn btn-sm btn-ghost">+</button>
+      </div>
+      <div class="row">
+        <button id="iMinus" class="btn btn-sm btn-ghost">−</button>
         <input id="iIn" type="number" step="0.001" min="0" max="65" placeholder="A">
+        <button id="iPlus" class="btn btn-sm btn-ghost">+</button>
       </div>
     </section>
 
