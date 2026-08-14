@@ -37,10 +37,25 @@ function renderDeviceSelect() {
 function switchDevice(ip) {
   if (!ip || ip === currentIp) return;
   currentIp = ip;
+  resetUi();
   renderDeviceSelect();
   toast(`Сервер ${ip}`);
   setConn(false);
   connect();
+}
+
+// Clear all live values so nothing from the previous server is shown
+function resetUi() {
+  protArmed = false;
+  outputOn = false;
+  ["voltage", "current", "power", "mode", "internalTemp",
+   "ampHours", "wattHours", "outputTime", "inputVoltage",
+   "externalTemp", "model"].forEach((id) => {
+    const el = $(id);
+    if (el) el.textContent = "--";
+  });
+  const btn = $("outBtn");
+  if (btn) { btn.textContent = "ВКЛ"; btn.className = "btn btn-success"; }
 }
 
 function addDevice(name, ip) {
@@ -116,10 +131,16 @@ const PROT_LABELS = {
 };
 const protectionText = (code) => PROT_LABELS[code] || `Prot#${code}`;
 
+// True while a protection fault is active - the on/off button acts as reset
+let protArmed = false;
+// Current output state from the last status push
+let outputOn = false;
+
 function renderStatus(s) {
   if (!s) return;
   // Output toggle shows the CURRENT state (state, not action)
-  const on = !!s.outputEnabled;
+  outputOn = !!(s.outputEnabled);
+  const on = outputOn;
   $("voltage").textContent = fmt(s.voltage) + "V";
   $("current").textContent = fmt(s.current, 3) + "A";
   $("power").textContent = fmt(s.power) + "W";
@@ -141,8 +162,16 @@ function renderStatus(s) {
     md.className = (m === "CV") ? "cv" : (m === "CC") ? "cc" : (m === "CP" ? "cp" : "");
   }
 
-  // Protection status is shown in the 4th slot; reset button only when triggered
-  $("clearProtBtn").classList.toggle("hidden", isNaN(code) || code === 0);
+  // Protection status is shown in the 4th slot; on/off button becomes "Сброс"
+  protArmed = !isNaN(code) && code > 0;
+  const btn = $("outBtn");
+  if (protArmed) {
+    btn.textContent = "Сброс";
+    btn.className = "btn btn-danger";
+  } else {
+    btn.textContent = on ? "ВКЛ" : "ВЫКЛ";
+    btn.className = "btn " + (on ? "btn-success" : "btn-danger");
+  }
 
   // Energy & temperatures
   $("ampHours").textContent = `${fmt(s.ampHours, 3)} Ah`;
@@ -176,13 +205,10 @@ function renderStatus(s) {
   if (editable("cBtf")) $("cBtf").value = fmt(s.batteryCutoff, 3);
   if (editable("cMemGroup")) $("cMemGroup").value = s.memoryGroup != null ? String(s.memoryGroup) : "0";
 
-  const btn = $("outBtn");
-  btn.textContent = on ? "ВКЛ" : "ВЫКЛ";
-  btn.className = "btn " + (on ? "btn-success" : "btn-danger");
-
-  $("keyLock").textContent = s.keyLockEnabled ? "🔒" : "🔓";
-  $("keyLock").className = "btn btn-sm " + (s.keyLockEnabled ? "btn-warning" : "btn-ghost");
-  $("keyLock").title = s.keyLockEnabled ? "Снять блокировку" : "Заблокировать";
+  const keyLockBtn = $("keyLock");
+  keyLockBtn.textContent = s.keyLockEnabled ? "🔒" : "🔓";
+  keyLockBtn.className = "btn btn-sm " + (s.keyLockEnabled ? "btn-warning" : "btn-ghost");
+  keyLockBtn.title = s.keyLockEnabled ? "Снять блокировку" : "Заблокировать";
 
   if (editable("vIn")) $("vIn").value = fmt(s.voltageSet);
   if (editable("iIn")) $("iIn").value = fmt(s.currentSet, 3);
@@ -257,8 +283,11 @@ function toast(t) {
 
 // ---- Actions ----
 function toggleOutput() {
-  const on = $("outBtn").textContent === "ВКЛ";
-  send({ action: "powerOutput", enable: !on });
+  if (protArmed) {
+    send({ action: "clearProtection" });
+    return;
+  }
+  send({ action: "powerOutput", enable: !outputOn });
 }
 
 function setVoltage() {
@@ -324,9 +353,6 @@ document.addEventListener("DOMContentLoaded", () => {
   $("wifiRefresh").addEventListener("click", loadWifiStatus);
   $("psuResetBtn").addEventListener("click", () => {
     if (confirm("Сбросить БП к заводским настройкам?")) send({ action: "psuReset" });
-  });
-  $("clearProtBtn").addEventListener("click", () => {
-    if (confirm("Сбросить сработавшую защиту?")) send({ action: "clearProtection" });
   });
   $("restartBtn").addEventListener("click", () => {
     if (confirm("Перезапустить ESP32?")) send({ action: "restart" });
