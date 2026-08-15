@@ -286,12 +286,17 @@ bool readPSUStatusBatched(PSUStatusData& data) {
 bool readPSUStatusBatchedLocked(PSUStatusData& data) {
   uint16_t buf[16];
   bool valid = true;
+  float liveVoltageSet = 0, liveCurrentSet = 0;
   
   // Batch 1: 0x0000 - 0x000E (15 contiguous): V_SET, I_SET, VOUT, IOUT, POWER,
   // UIN, AH_L, AH_H, WH_L, WH_H, OUT_H, OUT_M, OUT_S, T_IN, T_EX
   if (!powerSupply->readRegisters(REG_V_SET, 15, buf)) {
     valid = false;
   } else {
+    // buf[0]=V_SET, buf[1]=I_SET are the WORKING setpoints (updated by
+    // memory-group recalls), unlike the profile registers read in batch 7.
+    liveVoltageSet = buf[0] / 100.0f;
+    liveCurrentSet = buf[1] / 1000.0f;
     data.voltage = buf[2] / 100.0f;
     data.current = buf[3] / 1000.0f;
     data.power = buf[4] / 100.0f;
@@ -373,6 +378,9 @@ bool readPSUStatusBatchedLocked(PSUStatusData& data) {
     data.overWattHours = owh * 0.01f;
     data.otp = buf[12] / 10.0f;
     data.outputOnAtStartup = (buf[13] & 0x0001) != 0;
+    // Working setpoints always win - they reflect the active group recall
+    data.voltageSet = liveVoltageSet;
+    data.currentSet = liveCurrentSet;
   }
   
   if (!valid) return false;
@@ -862,6 +870,13 @@ void handleDeviceSettingAction(AsyncWebSocketClient* client, const String& actio
     unlockModbus();
     responseAction = "setPowerOnInitResponse";
   }
+  else if (action == "setCpMode") {
+    bool enabled = doc["enabled"] | false;
+    lockModbus();
+    success = powerSupply->setConstantPowerMode(enabled);
+    unlockModbus();
+    responseAction = "setCpModeResponse";
+  }
   else if (action == "setOhp") {
     uint16_t hours = doc["hours"] | 0;
     uint16_t minutes = doc["minutes"] | 0;
@@ -889,9 +904,83 @@ void handleDeviceSettingAction(AsyncWebSocketClient* client, const String& actio
   else if (action == "setMemoryGroup") {
     uint8_t group = doc["group"] | 0;
     lockModbus();
-    success = powerSupply->callMemoryGroup(static_cast<xy_sk::MemoryGroup>(group));
+    // callMemoryGroup skips M0 assuming it is already active, but a write of 0
+    // is still required to actively recall group M0 on some units.
+    if (group == 0) {
+      success = powerSupply->writeRegister(REG_EXTRACT_M, 0);
+    } else {
+      success = powerSupply->callMemoryGroup(static_cast<xy_sk::MemoryGroup>(group));
+    }
     unlockModbus();
     responseAction = "setMemoryGroupResponse";
+  }
+  else if (action == "getMemoryGroup") {
+    uint8_t group = doc["group"] | 0;
+    // Each group M0-M9 is 14 registers at 0050H + group*0010H (same layout as the working window)
+    uint16_t buf[14];
+    uint16_t etpReg = 0;
+    bool ok = false;
+    lockModbus();
+    ok = powerSupply->readRegisters(REG_CV_SET + ((uint16_t)group * 0x0010u), 14, buf);
+    if (ok) powerSupply->readRegister(REG_S_ETP, etpReg);
+    unlockModbus();
+    DynamicJsonDocument responseDoc(512);
+    responseDoc["action"] = "memoryGroupData";
+    responseDoc["group"] = group;
+    responseDoc["success"] = ok;
+    if (ok) {
+      responseDoc["voltageSet"] = buf[0] / 100.0f;
+      responseDoc["currentSet"] = buf[1] / 1000.0f;
+      responseDoc["lvp"] = buf[2] / 100.0f;
+      responseDoc["ovp"] = buf[3] / 100.0f;
+      responseDoc["ocp"] = buf[4] / 1000.0f;
+      responseDoc["opp"] = buf[5] / 10.0f;
+      responseDoc["ohpHours"] = buf[6];
+      responseDoc["ohpMinutes"] = buf[7];
+      uint32_t oah = (uint32_t)buf[8] | ((uint32_t)buf[9] << 16);
+      responseDoc["overAmpHours"] = oah / 1000.0f;
+      uint32_t owh = (uint32_t)buf[10] | ((uint32_t)buf[11] << 16);
+      responseDoc["overWattHours"] = owh * 0.01f;
+      responseDoc["otp"] = buf[12] / 10.0f;
+      responseDoc["etp"] = etpReg / 10.0f;
+      responseDoc["outputOnAtStartup"] = (buf[13] & 0x0001) != 0;
+    }
+    String response;
+    serializeJson(responseDoc, response);
+    client->text(response);
+    LOG_WS(client->remoteIP(), WiFi.localIP(), "WebSocket sent: " + response);
+    return;
+  }
+  else if (action == "saveMemoryGroup") {
+    uint8_t group = doc["group"] | 0;
+    uint16_t buf[14];
+    bool ok = false;
+    lockModbus();
+    // Read-modify-write so untouched fields of the group (voltage/current set) are preserved
+    ok = powerSupply->readRegisters(REG_CV_SET + ((uint16_t)group * 0x0010u), 14, buf);
+    if (ok) {
+      buf[2] = (uint16_t)lroundf((doc["lvp"] | 0.0f) * 100.0f);
+      buf[3] = (uint16_t)lroundf((doc["ovp"] | 0.0f) * 100.0f);
+      buf[4] = (uint16_t)lroundf((doc["ocp"] | 0.0f) * 1000.0f);
+      buf[5] = (uint16_t)lroundf((doc["opp"] | 0.0f) * 10.0f);
+      buf[6] = (uint16_t)(doc["ohpHours"] | 0);
+      buf[7] = (uint16_t)(doc["ohpMinutes"] | 0);
+      uint32_t oah = (uint32_t)lroundf((doc["overAmpHours"] | 0.0f) * 1000.0f);
+      buf[8] = oah & 0xFFFF;
+      buf[9] = (oah >> 16) & 0xFFFF;
+      uint32_t owh = (uint32_t)lroundf((doc["overWattHours"] | 0.0f) * 100.0f);
+      buf[10] = owh & 0xFFFF;
+      buf[11] = (owh >> 16) & 0xFFFF;
+      buf[12] = (uint16_t)lroundf((doc["otp"] | 0.0f) * 10.0f);
+      buf[13] = (buf[13] & 0xFFFE) | ((doc["outputOnAtStartup"] | false) ? 1 : 0);
+      ok = powerSupply->writeRegisters(REG_CV_SET + ((uint16_t)group * 0x0010u), 14, buf);
+      if (ok) {
+        uint16_t etpReg = (uint16_t)lroundf((doc["etp"] | 0.0f) * 10.0f);
+        ok = powerSupply->writeRegister(REG_S_ETP, etpReg);
+      }
+    }
+    unlockModbus();
+    responseAction = "saveMemoryGroupResponse";
   }
   else if (action == "psuReset") {
     lockModbus();
@@ -1041,6 +1130,29 @@ void handleWebSocketMessage(AsyncWebSocket* server, AsyncWebSocketClient* client
         LOG_WS(serverIP, clientIP, "WebSocket sent: " + response);
       } else {
         String errorMsg = "{\"action\":\"setCurrentResponse\",\"success\":false,\"error\":\"Power supply not connected\"}";
+        client->text(errorMsg);
+        LOG_WS(serverIP, clientIP, "WebSocket sent: " + errorMsg);
+      }
+    }
+    else if (action == "setPower") {
+      // Set constant power (CP mode)
+      if (powerSupply && powerSupply->testConnection()) {
+        float power = doc["power"];
+        lockModbus();
+        bool success = powerSupply->setConstantPower(power);
+        unlockModbus();
+        
+        DynamicJsonDocument responseDoc(256);
+        responseDoc["action"] = "setPowerResponse";
+        responseDoc["success"] = success;
+        responseDoc["power"] = power;
+        
+        String response;
+        serializeJson(responseDoc, response);
+        client->text(response);
+        LOG_WS(serverIP, clientIP, "WebSocket sent: " + response);
+      } else {
+        String errorMsg = "{\"action\":\"setPowerResponse\",\"success\":false,\"error\":\"Power supply not connected\"}";
         client->text(errorMsg);
         LOG_WS(serverIP, clientIP, "WebSocket sent: " + errorMsg);
       }
@@ -1415,7 +1527,8 @@ void handleWebSocketMessage(AsyncWebSocket* server, AsyncWebSocketClient* client
              action == "setBeeper" || action == "setMppt" || action == "setBatteryCutoff" ||
              action == "setPowerOnInit" || action == "setOhp" || action == "setOha" ||
              action == "setOwh" || action == "setMemoryGroup" || action == "psuReset" ||
-             action == "clearProtection") {
+             action == "clearProtection" || action == "setCpMode" || action == "getMemoryGroup" ||
+             action == "saveMemoryGroup") {
       if (!powerSupply) {
         client->text("{\"action\":\"deviceSettingResponse\",\"success\":false,\"error\":\"Power supply not connected\"}");
         return;

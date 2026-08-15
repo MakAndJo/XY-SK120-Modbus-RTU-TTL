@@ -48,6 +48,9 @@ function switchDevice(ip) {
 function resetUi() {
   protArmed = false;
   outputOn = false;
+  viewingGroup = null;
+  const pg = $("protMemGroup");
+  if (pg) pg.value = "0";
   ["voltage", "current", "power", "mode", "internalTemp",
    "ampHours", "wattHours", "outputTime", "inputVoltage",
    "externalTemp", "model"].forEach((id) => {
@@ -136,6 +139,8 @@ const protectionText = (code) => PROT_LABELS[code] || `Prot#${code}`;
 let protArmed = false;
 // Current output state from the last status push
 let outputOn = false;
+// Profile (memory group) being previewed/edited in the protection card; null = live values
+let viewingGroup = null;
 
 function renderStatus(s) {
   if (!s) return;
@@ -187,17 +192,21 @@ function renderStatus(s) {
   if ($("externalTemp")) $("externalTemp").textContent = tEx;
   document.querySelectorAll(".energy-temp-ex").forEach((el) => el.textContent = tEx);
 
-  // Protection inputs
-  if (editable("pOvp")) $("pOvp").value = fmt(s.ovp);
-  if (editable("pOcp")) $("pOcp").value = fmt(s.ocp, 3);
-  if (editable("pOpp")) $("pOpp").value = fmt(s.opp, 1);
-  if (editable("pLvp")) $("pLvp").value = fmt(s.lvp);
-  if (editable("pOtp")) $("pOtp").value = fmt(s.otp, 1);
-  if (editable("pOhpH")) $("pOhpH").value = s.ohpHours != null ? s.ohpHours : "";
-  if (editable("pOhpM")) $("pOhpM").value = s.ohpMinutes != null ? s.ohpMinutes : "";
-  if (editable("pOha")) $("pOha").value = fmt(s.overAmpHours, 3);
-  if (editable("pOwh")) $("pOwh").value = fmt(s.overWattHours, 1);
-  if (editable("pIni")) $("pIni").checked = !!s.outputOnAtStartup;
+  // Protection inputs (skipped while a profile is previewed in the protection card)
+  if (viewingGroup == null) {
+    if (editable("pOvp")) $("pOvp").value = fmt(s.ovp);
+    if (editable("pOcp")) $("pOcp").value = fmt(s.ocp, 3);
+    if (editable("pOpp")) $("pOpp").value = fmt(s.opp, 1);
+    if (editable("pLvp")) $("pLvp").value = fmt(s.lvp);
+    if (editable("pOtp")) $("pOtp").value = fmt(s.otp, 1);
+    if (editable("pOhpH")) $("pOhpH").value = s.ohpHours != null ? s.ohpHours : "";
+    if (editable("pOhpM")) $("pOhpM").value = s.ohpMinutes != null ? s.ohpMinutes : "";
+    if (editable("pOha")) $("pOha").value = fmt(s.overAmpHours, 3);
+    if (editable("pOwh")) $("pOwh").value = fmt(s.overWattHours, 1);
+    if (editable("pIni")) $("pIni").checked = !!s.outputOnAtStartup;
+    if (editable("pSetV")) $("pSetV").value = fmt(s.voltageSet);
+    if (editable("pSetI")) $("pSetI").value = fmt(s.currentSet, 3);
+  }
 
   // Settings inputs
   if (editable("cBacklight")) $("cBacklight").value = s.backlight != null ? s.backlight : "";
@@ -208,18 +217,48 @@ function renderStatus(s) {
   if (editable("cBeeper")) $("cBeeper").checked = !!s.beeper;
   if (editable("cMppt")) $("cMppt").checked = !!s.mpptEnabled;
   if (editable("cMpptThr")) $("cMpptThr").value = s.mpptThreshold != null ? fmt(s.mpptThreshold) : "";
+  if (editable("cCpMode")) $("cCpMode").checked = !!s.cpModeEnabled;
   if (editable("cBtf")) $("cBtf").value = fmt(s.batteryCutoff, 3);
-  if (editable("cMemGroup")) $("cMemGroup").value = s.memoryGroup != null ? String(s.memoryGroup) : "0";
+  document.querySelectorAll(".memgroup-sel").forEach((el) => {
+    if (el === document.activeElement) return;
+    // While previewing a profile, keep the protection selector on the chosen group
+    if (viewingGroup != null && el.id === "protMemGroup") return;
+    el.value = s.memoryGroup != null ? String(s.memoryGroup) : "0";
+  });
 
   const keyLockBtn = $("keyLock");
   keyLockBtn.textContent = s.keyLockEnabled ? "🔒" : "🔓";
   keyLockBtn.className = "btn btn-sm " + (s.keyLockEnabled ? "btn-warning" : "btn-ghost");
   keyLockBtn.title = s.keyLockEnabled ? "Снять блокировку" : "Заблокировать";
 
+  const cpMode = !!s.cpModeEnabled;
+  // CP mode: show the power setpoint, hide the current setpoint (and vice versa)
+  $("pCol").classList.toggle("hidden", !cpMode);
+  $("iCol").classList.toggle("hidden", cpMode);
+
   if (editable("vIn")) $("vIn").value = fmt(s.voltageSet);
   if (editable("iIn")) $("iIn").value = fmt(s.currentSet, 3);
+  if (editable("pIn")) $("pIn").value = s.powerSet != null ? fmt(s.powerSet, 1) : "";
 
   $("model").textContent = `Model ${s.model} / v${s.version}`;
+}
+
+// Populate the protection fields with a memory group's stored profile values
+function renderMemoryGroup(d) {
+  if (editable("pSetV")) $("pSetV").value = fmt(d.voltageSet);
+  if (editable("pSetI")) $("pSetI").value = fmt(d.currentSet, 3);
+  if (editable("pLvp")) $("pLvp").value = fmt(d.lvp);
+  if (editable("pOvp")) $("pOvp").value = fmt(d.ovp);
+  if (editable("pOcp")) $("pOcp").value = fmt(d.ocp, 3);
+  if (editable("pOpp")) $("pOpp").value = fmt(d.opp, 1);
+  if (editable("pOtp")) $("pOtp").value = fmt(d.otp, 1);
+  if (editable("pEtp")) $("pEtp").value = fmt(d.etp, 1);
+  $("pOhpH").value = d.ohpHours != null ? d.ohpHours : "";
+  $("pOhpM").value = d.ohpMinutes != null ? d.ohpMinutes : "";
+  if (editable("pOha")) $("pOha").value = fmt(d.overAmpHours, 3);
+  if (editable("pOwh")) $("pOwh").value = fmt(d.overWattHours, 1);
+  $("pIni").checked = !!d.outputOnAtStartup;
+  toast(`Профиль M${d.group} загружен`);
 }
 
 function renderWifi(s) {
@@ -272,6 +311,15 @@ function handleMessage(raw) {
     case "addWifiNetworkResponse":
       toast(msg.success ? "Сеть сохранена" : "Ошибка сохранения сети");
       break;
+    case "memoryGroupData":
+      if (msg.success) {
+        viewingGroup = Number(msg.group);
+        renderMemoryGroup(msg);
+      } else toast("Не удалось прочитать профиль");
+      break;
+    case "saveMemoryGroupResponse":
+      toast(msg.success ? `Профиль M${msg.group} сохранён` : "Ошибка сохранения профиля");
+      break;
   }
   // Toast failures from device-setting responses
   if (msg.action && msg.action.endsWith("Response") && msg.success === false && msg.error) {
@@ -308,13 +356,21 @@ function setCurrent() {
   send({ action: "setCurrent", current: i });
 }
 
-// Step the voltage/current setpoint by a fixed delta and apply it
+function setPower() {
+  const p = parseFloat($("pIn").value);
+  if (isNaN(p)) return;
+  send({ action: "setPower", power: p });
+}
+
+// Step the voltage/current/power setpoint by a fixed delta and apply it
 function stepSetpoint(which, delta, decimals) {
   const input = $(which);
   const cur = parseFloat(input.value);
   const next = (isNaN(cur) ? 0 : cur) + delta;
   input.value = next.toFixed(decimals);
-  if (which === "vIn") setVoltage(); else setCurrent();
+  if (which === "vIn") setVoltage();
+  else if (which === "iIn") setCurrent();
+  else setPower();
 }
 
 function toggleKeyLock() {
@@ -334,7 +390,7 @@ function addNetwork() {
 }
 
 // Map table-row [data-action] buttons to their inputs and build the command
-function applyRow(action) {
+function applyRow(action, btn) {
   switch (action) {
     case "ovp": send({ action: "setProtection", key: "ovp", value: parseFloat($("pOvp").value) }); break;
     case "ocp": send({ action: "setProtection", key: "ocp", value: parseFloat($("pOcp").value) }); break;
@@ -352,8 +408,13 @@ function applyRow(action) {
     case "tempunit": send({ action: "setTempUnit", celsius: $("cTempUnit").value === "c" }); break;
     case "beeper": send({ action: "setBeeper", enabled: $("cBeeper").checked }); break;
     case "mppt": send({ action: "setMppt", enable: $("cMppt").checked, threshold: parseFloat($("cMpptThr").value) || 0.8 }); break;
+    case "cpmode": send({ action: "setCpMode", enabled: $("cCpMode").checked }); break;
     case "btf": send({ action: "setBatteryCutoff", current: parseFloat($("cBtf").value) }); break;
-    case "memgroup": send({ action: "setMemoryGroup", group: parseInt($("cMemGroup").value) }); break;
+    case "memgroup": {
+      const sel = btn ? btn.closest(".ctrl, .memgroup-row").querySelector(".memgroup-sel") : document.querySelector(".memgroup-sel");
+      if (sel) send({ action: "setMemoryGroup", group: parseInt(sel.value) });
+      break;
+    }
   }
 }
 
@@ -400,8 +461,45 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // All [data-action] "ok" buttons
-  document.querySelectorAll(".editable .btn[data-action]").forEach((btn) => {
-    btn.addEventListener("click", () => applyRow(btn.dataset.action));
+  document.querySelectorAll(".btn[data-action]").forEach((btn) => {
+    btn.addEventListener("click", () => applyRow(btn.dataset.action, btn));
+  });
+
+  // Protection card: profile preview + Save/Cancel/Recall
+  $("protMemGroup").addEventListener("change", (e) => {
+    const g = parseInt(e.target.value);
+    if (isNaN(g)) return;
+    send({ action: "getMemoryGroup", group: g });
+  });
+  $("protSaveBtn").addEventListener("click", () => {
+    if (viewingGroup == null) { toast("Сначала выберите профиль"); return; }
+    send({
+      action: "saveMemoryGroup",
+      group: viewingGroup,
+      voltageSet: parseFloat($("pSetV").value) || 0,
+      currentSet: parseFloat($("pSetI").value) || 0,
+      lvp: parseFloat($("pLvp").value) || 0,
+      ovp: parseFloat($("pOvp").value) || 0,
+      ocp: parseFloat($("pOcp").value) || 0,
+      opp: parseFloat($("pOpp").value) || 0,
+      otp: parseFloat($("pOtp").value) || 0,
+      etp: parseFloat($("pEtp").value) || 0,
+      ohpHours: parseInt($("pOhpH").value) || 0,
+      ohpMinutes: parseInt($("pOhpM").value) || 0,
+      overAmpHours: parseFloat($("pOha").value) || 0,
+      overWattHours: parseFloat($("pOwh").value) || 0,
+      outputOnAtStartup: $("pIni").checked,
+    });
+  });
+  $("protCancelBtn").addEventListener("click", () => {
+    const g = viewingGroup;
+    viewingGroup = null;
+    $("protMemGroup").value = String(g == null ? 0 : g);
+    send({ action: "getData" }); // restore live values
+  });
+  $("protRecallBtn").addEventListener("click", () => {
+    if (viewingGroup == null) { toast("Сначала выберите профиль"); return; }
+    send({ action: "setMemoryGroup", group: viewingGroup });
   });
 
   $("vIn").addEventListener("keydown", (e) => { if (e.key === "Enter") setVoltage(); });
@@ -429,6 +527,10 @@ document.addEventListener("DOMContentLoaded", () => {
   addStepHandler("vPlus", "vIn", 0.1, 2);
   addStepHandler("iMinus", "iIn", -0.01, 3);
   addStepHandler("iPlus", "iIn", 0.01, 3);
+  addStepHandler("pMinus", "pIn", -0.1, 1);
+  addStepHandler("pPlus", "pIn", 0.1, 1);
+
+  $("pIn").addEventListener("keydown", (e) => { if (e.key === "Enter") setPower(); });
 
   connect();
   setInterval(loadWifiStatus, 30000);

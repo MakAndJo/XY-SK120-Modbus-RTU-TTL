@@ -16,25 +16,22 @@
         <span id="connText">offline</span>
       </div>
     </div>
+    <div class="device-bar row">
+      <select id="deviceSelect" class="device-select"></select>
+      <button id="devAddBtn" class="btn btn-primary">+</button>
+      <button id="devDelBtn" class="btn btn-ghost" title="Удалить устройство">⤬</button>
+    </div>
+    <div id="addForm" class="hidden device-bar row">
+      <input id="newName" type="text" placeholder="Имя (PSU)">
+      <input id="newIp" type="text" placeholder="192.168.1.100">
+      <button id="addOk" class="btn btn-primary">OK</button>
+      <!-- <button id="addCancel" class="btn btn-ghost">✕</button> -->
+    </div>
   </header>
 
   <main>
     <!-- Tab: Главная -->
     <tab id="page-main" class="tabpage">
-      <section>
-        <div class="device-bar row">
-          <select id="deviceSelect" class="device-select"></select>
-          <button id="devAddBtn" class="btn btn-primary">+</button>
-          <button id="devDelBtn" class="btn btn-ghost" title="Удалить устройство">⤬</button>
-        </div>
-        <div id="addForm" class="hidden device-bar row">
-          <input id="newName" type="text" placeholder="Имя (PSU)">
-          <input id="newIp" type="text" placeholder="192.168.1.100">
-          <button id="addOk" class="btn btn-primary">OK</button>
-          <!-- <button id="addCancel" class="btn btn-ghost">✕</button> -->
-        </div>
-      </section>
-
       <section class="card" id="live" style="user-select: none;">
         <div class="row">
           <div class="col big" style="flex: 1;margin: -6px 0;">
@@ -59,20 +56,42 @@
         <div class="row">
           <div class="col">
             <label for="vIn">Напряжение</label>
-            <input id="vIn" type="number" step="0.01" min="0" max="150" placeholder="V">
+            <div class="input-wrap">
+              <input id="vIn" type="number" step="0.01" min="0" max="150" placeholder="0.00">
+              <span class="suffix">V</span>
+            </div>
             <div class="row">
               <button id="vMinus" class="btn btn-sm btn-ghost">−</button>
               <button id="vPlus" class="btn btn-sm btn-ghost">+</button>
             </div>
           </div>
-          <div class="col">
+          <div class="col" id="iCol">
             <label for="iIn">Ток</label>
-            <input id="iIn" type="number" step="0.001" min="0" max="65" placeholder="A">
+            <div class="input-wrap">
+              <input id="iIn" type="number" step="0.001" min="0" max="65" placeholder="0.000">
+              <span class="suffix">A</span>
+            </div>
             <div class="row">
               <button id="iMinus" class="btn btn-sm btn-ghost">−</button>
               <button id="iPlus" class="btn btn-sm btn-ghost">+</button>
             </div>
           </div>
+          <div class="col" id="pCol">
+            <label for="pIn">Мощность</label>
+            <div class="input-wrap">
+              <input id="pIn" type="number" step="0.1" min="0" max="150" placeholder="0.0">
+              <span class="suffix">W</span>
+            </div>
+            <div class="row">
+              <button id="pMinus" class="btn btn-sm btn-ghost">−</button>
+              <button id="pPlus" class="btn btn-sm btn-ghost">+</button>
+            </div>
+          </div>
+        </div>
+        <div class="row memgroup-row">
+          <label>Группа памяти</label>
+          <select class="memgroup-sel"><option value="0">M0</option><option value="1">M1</option><option value="2">M2</option><option value="3">M3</option><option value="4">M4</option><option value="5">M5</option><option value="6">M6</option><option value="7">M7</option><option value="8">M8</option><option value="9">M9</option></select>
+          <button class="btn btn-sm btn-primary" data-action="memgroup">ok</button>
         </div>
       </section>
 
@@ -94,17 +113,26 @@
       <section class="card" id="protCard">
         <h2>Профиль и защита</h2>
         <table class="editable">
-          <tr><td>OVP</td><td class="ctrl"><input id="pOvp" type="number" step="0.01" min="0"><button class="btn btn-sm btn-primary" data-action="ovp">ok</button></td></tr>
-          <tr><td>OCP</td><td class="ctrl"><input id="pOcp" type="number" step="0.001" min="0"><button class="btn btn-sm btn-primary" data-action="ocp">ok</button></td></tr>
-          <tr><td>OPP</td><td class="ctrl"><input id="pOpp" type="number" step="0.1" min="0"><button class="btn btn-sm btn-primary" data-action="opp">ok</button></td></tr>
-          <tr><td>LVP</td><td class="ctrl"><input id="pLvp" type="number" step="0.01" min="0"><button class="btn btn-sm btn-primary" data-action="lvp">ok</button></td></tr>
-          <tr><td>OTP</td><td class="ctrl"><input id="pOtp" type="number" step="1" min="0"><button class="btn btn-sm btn-primary" data-action="otp">ok</button></td></tr>
-          <tr><td>OHP (чч:мм)</td><td class="ctrl"><input id="pOhpH" type="number" step="1" min="0" max="99" placeholder="ч"><input id="pOhpM" type="number" step="1" min="0" max="59" placeholder="мин"><button class="btn btn-sm btn-primary" data-action="ohp">ok</button></td></tr>
-          <tr><td>OHA (Ah)</td><td class="ctrl"><input id="pOha" type="number" step="0.001" min="0"><button class="btn btn-sm btn-primary" data-action="oha">ok</button></td></tr>
-          <tr><td>OWH (Wh)</td><td class="ctrl"><input id="pOwh" type="number" step="0.01" min="0"><button class="btn btn-sm btn-primary" data-action="owh">ok</button></td></tr>
-          <tr><td>Выход при пуске</td><td class="ctrl"><input id="pIni" type="checkbox"><button class="btn btn-sm btn-primary" data-action="ini">ok</button></td></tr>
+          <tr><td>M-Pre</td><td class="ctrl"><select id="protMemGroup" class="memgroup-sel"><option value="0">M0</option><option value="1">M1</option><option value="2">M2</option><option value="3">M3</option><option value="4">M4</option><option value="5">M5</option><option value="6">M6</option><option value="7">M7</option><option value="8">M8</option><option value="9">M9</option></select></td></tr>
+          <tr><td>V-set (V)</td><td class="ctrl"><input id="pSetV" type="number" step="0.01" min="0"></td></tr>
+          <tr><td>I-set (A)</td><td class="ctrl"><input id="pSetI" type="number" step="0.001" min="0"></td></tr>
+          <tr><td>S-LVP (V)</td><td class="ctrl"><input id="pLvp" type="number" step="0.01" min="0"></td></tr>
+          <tr><td>S-OVP (V)</td><td class="ctrl"><input id="pOvp" type="number" step="0.01" min="0"></td></tr>
+          <tr><td>S-OCP (A)</td><td class="ctrl"><input id="pOcp" type="number" step="0.001" min="0"></td></tr>
+          <tr><td>S-OPP (W)</td><td class="ctrl"><input id="pOpp" type="number" step="0.1" min="0"></td></tr>
+          <tr><td>S-OTP (°C)</td><td class="ctrl"><input id="pOtp" type="number" step="1" min="0"></td></tr>
+          <tr><td>S-ETP (°C)</td><td class="ctrl"><input id="pEtp" type="number" step="1" min="0"></td></tr>
+          <tr><td>S-OHP (чч:мм)</td><td class="ctrl"><input id="pOhpH" type="number" step="1" min="0" max="99" placeholder="ч"><input id="pOhpM" type="number" step="1" min="0" max="59" placeholder="мин"></td></tr>
+          <tr><td>S-OAH (Ah)</td><td class="ctrl"><input id="pOha" type="number" step="0.001" min="0"></td></tr>
+          <tr><td>S-OWH (Wh)</td><td class="ctrl"><input id="pOwh" type="number" step="0.01" min="0"></td></tr>
+          <tr><td>S-INI</td><td class="ctrl"><input id="pIni" type="checkbox"></td></tr>
         </table>
-        <button id="psuResetBtn" class="btn btn-sm btn-danger">Сброс БП к заводским</button>
+        <br/>
+        <div class="row memgroup-actions">
+          <button id="protSaveBtn" class="btn btn-sm btn-primary">Save</button>
+          <button id="protCancelBtn" class="btn btn-sm btn-ghost">Cancel</button>
+          <button id="protRecallBtn" class="btn btn-sm btn-warning">Recall</button>
+        </div>
       </section>
     </tab>
 
@@ -120,10 +148,13 @@
           <tr><td>Единицы темп.</td><td class="ctrl"><select id="cTempUnit"><option value="c">°C</option><option value="f">°F</option></select><button class="btn btn-sm btn-primary" data-action="tempunit">ok</button></td></tr>
           <tr><td>Зуммер</td><td class="ctrl"><input id="cBeeper" type="checkbox"><button class="btn btn-sm btn-primary" data-action="beeper">ok</button></td></tr>
           <tr><td>MPPT</td><td class="ctrl"><input id="cMppt" type="checkbox"><button class="btn btn-sm btn-primary" data-action="mppt">ok</button><input id="cMpptThr" type="number" step="0.01" min="0.75" max="0.88" placeholder="порог" style="width:80px"></td></tr>
+          <tr><td>CP (CW) mode</td><td class="ctrl"><input id="cCpMode" type="checkbox"><button class="btn btn-sm btn-primary" data-action="cpmode">ok</button></td></tr>
           <tr><td>Ток откл. АКБ (A)</td><td class="ctrl"><input id="cBtf" type="number" step="0.001" min="0"><button class="btn btn-sm btn-primary" data-action="btf">ok</button></td></tr>
-          <tr><td>Группа памяти</td><td class="ctrl"><select id="cMemGroup"><option value="0">M0</option><option value="1">M1</option><option value="2">M2</option><option value="3">M3</option><option value="4">M4</option><option value="5">M5</option><option value="6">M6</option><option value="7">M7</option><option value="8">M8</option><option value="9">M9</option></select><button class="btn btn-sm btn-primary" data-action="memgroup">ok</button></td></tr>
         </table>
-        <button id="restartBtn" class="btn btn-sm btn-danger">Перезапустить ESP</button>
+        <div class="row">
+          <button id="restartBtn" class="btn btn-sm btn-danger">Перезапустить ESP</button>
+          <button id="psuResetBtn" class="btn btn-sm btn-danger">Сброс БП к заводским</button>
+        </div>
       </section>
 
       <section class="card" id="wifiCard">
@@ -146,7 +177,7 @@
 
   <nav id="tabbar">
     <button data-page="main" class="active">Главная</button>
-    <button data-page="prot">Защита</button>
+    <button data-page="prot">Профили</button>
     <button data-page="cfg">Настройки</button>
   </nav>
 
