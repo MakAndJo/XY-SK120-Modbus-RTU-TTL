@@ -56,16 +56,23 @@
       </section>
 
       <section class="card">
-        <h2>Установка</h2>
         <div class="row">
-          <button id="vMinus" class="btn btn-sm btn-ghost">−</button>
-          <input id="vIn" type="number" step="0.01" min="0" max="150" placeholder="V">
-          <button id="vPlus" class="btn btn-sm btn-ghost">+</button>
-        </div>
-        <div class="row">
-          <button id="iMinus" class="btn btn-sm btn-ghost">−</button>
-          <input id="iIn" type="number" step="0.001" min="0" max="65" placeholder="A">
-          <button id="iPlus" class="btn btn-sm btn-ghost">+</button>
+          <div class="col">
+            <label for="vIn">Напряжение</label>
+            <input id="vIn" type="number" step="0.01" min="0" max="150" placeholder="V">
+            <div class="row">
+              <button id="vMinus" class="btn btn-sm btn-ghost">−</button>
+              <button id="vPlus" class="btn btn-sm btn-ghost">+</button>
+            </div>
+          </div>
+          <div class="col">
+            <label for="iIn">Ток</label>
+            <input id="iIn" type="number" step="0.001" min="0" max="65" placeholder="A">
+            <div class="row">
+              <button id="iMinus" class="btn btn-sm btn-ghost">−</button>
+              <button id="iPlus" class="btn btn-sm btn-ghost">+</button>
+            </div>
+          </div>
         </div>
       </section>
 

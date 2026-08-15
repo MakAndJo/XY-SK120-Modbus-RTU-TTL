@@ -24,6 +24,19 @@ body {
   position: fixed;
 }
 
+.row { display: flex; gap: 10px; align-items: center; }
+.row + .row { margin-top: 8px; }
+.row.big { margin-top: 0; }
+.row > .btn-sm { width: 3em; flex: 1 0 auto; }
+.col { display: flex; flex-direction: column; gap: 0.5em; flex: 1; }
+.col.big { gap:0; }
+.col.control {
+  text-align: end;
+  min-height: stretch;
+  align-items: end;
+  justify-content: space-between;
+}
+
 main {
   position: absolute;
   width: 100%;
@@ -90,19 +103,6 @@ main > tab {
   display: flex;
   align-items: center;
   gap: 10px;
-}
-
-.row { display: flex; gap: 10px; align-items: center; }
-.row + .row { margin-top: 8px; }
-.row.big { margin-top: 0; }
-.row > .btn-sm { width: 3em; flex: 0 0 auto; }
-.col { display: flex; flex-direction: column; gap: 0.5em; }
-.col.big { gap:0; }
-.col.control {
-  text-align: end;
-  min-height: stretch;
-  align-items: end;
-  justify-content: space-between;
 }
 
 .val { flex: 1; display: contents; }
