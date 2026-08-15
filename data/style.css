@@ -31,6 +31,7 @@ body {
 .col { display: flex; flex-direction: column; gap: 0.5em; flex: 1; }
 .col.big { gap:0; }
 .col.control {
+  flex: 0;
   text-align: end;
   min-height: stretch;
   align-items: end;
