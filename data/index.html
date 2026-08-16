@@ -98,6 +98,8 @@
           <tr><td>Темп. внешн.</td><td class="energy-temp-ex">--</td></tr>
         </table>
       </section>
+
+      <footer><span class="model"></span></footer>
     </tab>
 
     <!-- Tab: Защита -->
@@ -126,6 +128,7 @@
           <button id="protRecallBtn" class="btn btn-sm btn-warning">Recall</button>
         </div>
       </section>
+      <footer><span class="model"></span></footer>
     </tab>
 
     <!-- Tab: Настройки -->
@@ -153,16 +156,6 @@
         </div>
       </section>
 
-      <section class="card" id="serversCard">
-        <h2>Серверы</h2>
-        <table id="serversList" class="editable"></table>
-        <div class="row mt-4">
-          <input id="newName" type="text" placeholder="Имя (PSU)">
-          <input id="newIp" type="text" placeholder="192.168.1.100">
-          <button id="addOk" class="btn btn-ghost" title="Добавить сервер">+</button>
-        </div>
-      </section>
-
       <section class="card" id="wifiCard">
         <h2>WiFi <button id="wifiRefresh" class="btn btn-sm btn-ghost">обновить</button></h2>
         <table>
@@ -170,13 +163,25 @@
           <tr><td>IP</td><td id="wifiIp">--</td></tr>
           <tr><td>Сигнал</td><td id="wifiRssi">--</td></tr>
         </table>
-        <div class="row mt-4">
+        <div class="row mt-4 wrap">
           <input id="wifiNewSsid" type="text" placeholder="SSID">
           <input id="wifiNewPass" type="password" placeholder="Пароль">
-          <button id="wifiAddBtn" class="btn btn-sm btn-primary">+</button>
+          <button id="wifiAddBtn" class="btn btn-ghost" title="Добавить сеть">+</button>
         </div>
       </section>
-      <footer><span id="model"></span></footer>
+
+
+      <section class="card" id="serversCard">
+        <h2>Серверы</h2>
+        <table id="serversList" class="editable"></table>
+        <div class="row mt-4 wrap">
+          <input id="newName" type="text" placeholder="Имя (PSU)">
+          <input id="newIp" type="text" placeholder="192.168.1.100">
+          <button id="addOk" class="btn btn-ghost" title="Добавить сервер">+</button>
+        </div>
+      </section>
+
+      <footer><span class="model"></span></footer>
     </tab>
   </main>
 

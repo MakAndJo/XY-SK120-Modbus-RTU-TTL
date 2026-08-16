@@ -42,26 +42,20 @@ function renderServersList() {
   tbody.innerHTML = "";
   servers.forEach((s) => {
     const tr = document.createElement("tr");
-    const label = document.createElement("div");
-    label.classList.add("col", "big");
+    const label = document.createElement("td");
+    label.className = "server-name";
     const name = document.createElement("span");
-    name.className = "server-name";
-    name.textContent = `${s.name}`;
-    name.title = s.ip;
-    label.style.cursor = 'pointer';
-    label.addEventListener("click", () => switchDevice(s.ip));
+    name.textContent = s.name;
+    if (s.ip === currentIp) name.classList.add("current");
+    const ip = document.createElement("span");
+    ip.className = "server-ip";
+    ip.textContent = s.ip;
     label.appendChild(name);
-    const sip = document.createElement("td");
-    sip.className = "server-ip";
-    sip.textContent = s.ip;
-    label.appendChild(sip);
-    if (s.ip === currentIp) {
-      tr.classList.add("current");
-    }
+    label.appendChild(ip);
+    label.addEventListener("click", () => switchDevice(s.ip));
     tr.appendChild(label);
     const ctrl = document.createElement("td");
     ctrl.className = "ctrl";
-    ctrl.style.flex = "0 0 auto";
     const delBtn = document.createElement("button");
     delBtn.className = "btn btn-sm btn-danger";
     delBtn.textContent = "Удалить";
@@ -94,10 +88,11 @@ function resetUi() {
   if (pg) pg.value = "0";
   ["voltage", "current", "power", "mode", "internalTemp",
    "ampHours", "wattHours", "outputTime", "inputVoltage",
-   "externalTemp", "model"].forEach((id) => {
+   "externalTemp"].forEach((id) => {
     const el = $(id);
     if (el) el.textContent = "--";
-  });
+   });
+  document.querySelectorAll(".model").forEach(el => el.textContent = "--");
   document.querySelectorAll(".energy-temp-in, .energy-temp-ex").forEach((el) => el.textContent = "--");
   const btn = $("outBtn");
   if (btn) { btn.textContent = "ВКЛ"; btn.className = "btn btn-success"; }
@@ -315,7 +310,8 @@ function renderStatus(s) {
   if (editable("iIn")) $("iIn").value = fmt(s.currentSet, 3);
   if (editable("pIn")) $("pIn").value = s.powerSet != null ? fmt(s.powerSet, 1) : "";
 
-  $("model").textContent = `Model ${s.model} / v${s.version}`;
+  document.querySelectorAll('.model')
+    .forEach(el => el.textContent = `Model ${s.model} / v${s.version}`);
 }
 
 // Populate the protection fields with a memory group's stored profile values
