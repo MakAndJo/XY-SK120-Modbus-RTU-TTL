@@ -42,23 +42,33 @@ function renderServersList() {
   tbody.innerHTML = "";
   servers.forEach((s) => {
     const tr = document.createElement("tr");
-    const label = document.createElement("td");
-    label.textContent = `${s.name} (${s.ip})`;
+    const label = document.createElement("div");
+    label.classList.add("col", "big");
+    const name = document.createElement("span");
+    name.className = "server-name";
+    name.textContent = `${s.name}`;
+    name.title = s.ip;
+    label.style.cursor = 'pointer';
+    label.addEventListener("click", () => switchDevice(s.ip));
+    label.appendChild(name);
+    const sip = document.createElement("td");
+    sip.className = "server-ip";
+    sip.textContent = s.ip;
+    label.appendChild(sip);
+    if (s.ip === currentIp) {
+      tr.classList.add("current");
+    }
+    tr.appendChild(label);
     const ctrl = document.createElement("td");
     ctrl.className = "ctrl";
-    const selectBtn = document.createElement("button");
-    selectBtn.className = "btn btn-sm btn-primary";
-    selectBtn.textContent = "Выбрать";
-    selectBtn.addEventListener("click", () => switchDevice(s.ip));
+    ctrl.style.flex = "0 0 auto";
     const delBtn = document.createElement("button");
     delBtn.className = "btn btn-sm btn-danger";
     delBtn.textContent = "Удалить";
     delBtn.addEventListener("click", () => {
       if (confirm(`Удалить этот сервер? (${s.ip})`)) removeDevice(s.ip);
     });
-    ctrl.appendChild(selectBtn);
     ctrl.appendChild(delBtn);
-    tr.appendChild(label);
     tr.appendChild(ctrl);
     tbody.appendChild(tr);
   });

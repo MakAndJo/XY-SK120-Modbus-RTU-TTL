@@ -24,7 +24,8 @@ body {
   position: fixed;
 }
 
-.row { display: flex; gap: 10px; align-items: center; }
+.mt-4 { margin-top: 8px; }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .row + .row { margin-top: 8px; }
 .row.big { margin-top: 0; }
 .row > .btn-sm { width: 3em; flex: 1 0 auto; }
@@ -168,7 +169,35 @@ select {
 }
 select:focus { outline: 2px solid var(--accent); }
 
-input[type="checkbox"] { flex: 0 0 auto; width: 22px; height: 22px; accent-color: var(--accent); }
+input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  cursor: pointer;
+  background: var(--bg);
+  border: 2px solid var(--border);
+  border-radius: 7px;
+  position: relative;
+  transition: background 0.15s, border-color 0.15s;
+}
+input[type="checkbox"]:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 1px;
+  width: 6px;
+  height: 11px;
+  border: solid var(--bg);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
 
 .input-wrap { position: relative; }
 .input-wrap input { padding-right: 2.2em; min-width: 100%; }
@@ -194,6 +223,11 @@ table.editable tr { display: flex; flex-wrap: wrap; gap: 2px 10px; padding: 6px 
 table.editable td { padding: 0; }
 table.editable td:first-child { flex: 0 0 auto; width: auto; min-width: 40%; }
 table.editable .ctrl { display: flex; flex: 1 1 40%; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; }
+table.editable .ctrl:last-child { justify-content: flex-end; }
+table.editable .server-name { flex: 1 1 auto; color: var(--text); }
+table.editable .server-ip { flex: 0 0 auto; color: var(--muted); font-size: 0.8rem; }
+table.editable tr.current .server-name::after { content: " ●"; color: var(--green); }
+table.editable input[type="checkbox"] { flex: 0 0 auto; width: 22px; height: 22px; padding: 0; }
 table.editable .ctrl .btn { flex: 0 0 auto; }
 
 #toast {
@@ -246,8 +280,8 @@ footer { padding: 12px; text-align: center; color: var(--muted); font-size: 0.8r
 #toast { bottom: 80px; }
 
 @media (max-width: 520px) {
-  table.editable td:first-child { flex: 0 0 100%; min-width: 0; }
-  table.editable .ctrl { flex: 1 1 100%; }
+  table.editable td:first-child { flex: 0 0 auto; min-width: 0; }
+  table.editable .ctrl { flex: 1 1 auto; }
 }
 
 @media (min-width: 700px) {
