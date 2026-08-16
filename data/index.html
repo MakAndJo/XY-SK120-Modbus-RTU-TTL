@@ -81,9 +81,8 @@
           </div>
         </div>
         <div class="row memgroup-row">
-          <label>Группа памяти</label>
           <select class="memgroup-sel"><option value="0">M0</option><option value="1">M1</option><option value="2">M2</option><option value="3">M3</option><option value="4">M4</option><option value="5">M5</option><option value="6">M6</option><option value="7">M7</option><option value="8">M8</option><option value="9">M9</option></select>
-          <button class="btn btn-sm btn-primary" data-action="memgroup">ok</button>
+          <button style="flex: 0" class="btn btn-ghost" data-action="memgroup" title="Recall memory group">></button>
         </div>
       </section>
 
@@ -122,10 +121,12 @@
           <tr><td>S-INI</td><td class="ctrl"><input id="pIni" type="checkbox"></td></tr>
         </table>
         <br/>
-        <div class="row memgroup-actions">
-          <button id="protSaveBtn" class="btn btn-sm btn-primary">Save</button>
-          <button id="protCancelBtn" class="btn btn-sm btn-ghost">Cancel</button>
-          <button id="protRecallBtn" class="btn btn-sm btn-warning">Recall</button>
+        <div class="row">
+          <button id="protSaveBtn" class="btn btn-primary">Save</button>
+          <button id="protCancelBtn" class="btn btn-ghost">Cancel</button>
+        </div>
+        <div class="row">
+          <button id="protRecallBtn" class="btn btn-warning">Recall</button>
         </div>
       </section>
       <footer><span class="model"></span></footer>
@@ -135,7 +136,7 @@
     <tab id="page-cfg" class="tabpage hidden">
       <section class="card" id="cfgCard">
         <h2>Настройки устройства</h2>
-        <table class="editable">
+        <table class="editable row">
           <tr><td>Подсветка</td><td class="ctrl"><input id="cBacklight" type="number" step="1" min="1" max="5"></td></tr>
           <tr><td>Сон (мин)</td><td class="ctrl"><input id="cSleep" type="number" step="1" min="0" max="255"></td></tr>
           <tr><td>Slave адрес</td><td class="ctrl"><input id="cSlave" type="number" step="1" min="0" max="247"></td></tr>
@@ -146,24 +147,23 @@
           <tr><td>CP (CW) mode</td><td class="ctrl"><input id="cCpMode" type="checkbox"></td></tr>
           <tr><td>Ток откл. АКБ (A)</td><td class="ctrl"><input id="cBtf" type="number" step="0.001" min="0"></td></tr>
         </table>
-        <div class="row memgroup-actions">
-          <button id="cfgSaveBtn" class="btn btn-sm btn-primary">Save</button>
-          <button id="cfgCancelBtn" class="btn btn-sm btn-ghost">Cancel</button>
+        <div class="row">
+          <button id="cfgSaveBtn" class="btn btn-primary">Save</button>
+          <button id="cfgCancelBtn" class="btn btn-ghost">Cancel</button>
         </div>
         <div class="row">
-          <button id="restartBtn" class="btn btn-sm btn-danger">Перезапустить ESP</button>
-          <button id="psuResetBtn" class="btn btn-sm btn-danger">Сброс БП к заводским</button>
+          <button id="psuResetBtn" class="btn btn-danger">Сброс БП к заводским</button>
         </div>
       </section>
 
       <section class="card" id="wifiCard">
         <h2>WiFi <button id="wifiRefresh" class="btn btn-sm btn-ghost">обновить</button></h2>
-        <table>
+        <table class="editable row">
           <tr><td>Сеть</td><td id="wifiSsid">--</td></tr>
           <tr><td>IP</td><td id="wifiIp">--</td></tr>
           <tr><td>Сигнал</td><td id="wifiRssi">--</td></tr>
         </table>
-        <div class="row mt-4 wrap">
+        <div class="row wrap">
           <input id="wifiNewSsid" type="text" placeholder="SSID">
           <input id="wifiNewPass" type="password" placeholder="Пароль">
           <button id="wifiAddBtn" class="btn btn-ghost" title="Добавить сеть">+</button>
@@ -173,13 +173,17 @@
 
       <section class="card" id="serversCard">
         <h2>Серверы</h2>
-        <table id="serversList" class="editable"></table>
-        <div class="row mt-4 wrap">
+        <table id="serversList" class="editable row"></table>
+        <div class="row wrap">
           <input id="newName" type="text" placeholder="Имя (PSU)">
           <input id="newIp" type="text" placeholder="192.168.1.100">
           <button id="addOk" class="btn btn-ghost" title="Добавить сервер">+</button>
         </div>
       </section>
+
+      <div class="row">
+        <button id="restartBtn" class="btn btn-danger">Перезапустить ESP</button>
+      </div>
 
       <footer><span class="model"></span></footer>
     </tab>
