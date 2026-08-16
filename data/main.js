@@ -84,6 +84,11 @@ function resetUi() {
   protArmed = false;
   outputOn = false;
   viewingGroup = null;
+  memProfiles = {};
+  memLoadedAll = false;
+  batchMemLoading = false;
+  batchMemPending = 0;
+  homePendingGroup = null;
   const pg = $("protMemGroup");
   if (pg) pg.value = "0";
   ["voltage", "current", "power", "mode", "internalTemp",
@@ -141,6 +146,10 @@ function connect() {
     connected = true;
     setConn(false);
     loadWifiStatus();
+    if (!memLoadedAll) {
+      memLoadedAll = true;
+      loadAllMemGroups();
+    }
   };
   ws.onclose = () => {
     connected = false;
@@ -189,6 +198,36 @@ let protArmed = false;
 let outputOn = false;
 // Profile (memory group) being previewed/edited in the protection card; null = live values
 let viewingGroup = null;
+// Cached V/I-set per memory group, used to label the home selector options (cacheMemGroup)
+let memProfiles = {};
+let memLoadedAll = false;
+// True while loadAllMemGroups() fills the cache; those replies only cache, nothing else
+let batchMemLoading = false;
+let batchMemPending = 0;
+// Home selector: group the user just chose, waiting for the PSU to confirm it in status
+let homePendingGroup = null;
+
+function cacheMemGroup(d) {
+  if (!d || d.group == null) return;
+  memProfiles[d.group] = { v: d.voltageSet, i: d.currentSet };
+  // Home selector only: the protection tab shows the values in the V-set/I-set fields below
+  const sel = document.querySelector(".memgroup-row .memgroup-sel");
+  if (!sel) return;
+  [...sel.options].forEach((opt) => {
+    const p = memProfiles[opt.value];
+    opt.textContent = (p && (p.v > 0 || p.i > 0))
+      ? `M${opt.value} (${fmt(p.v).replace(".", ",")}V / ${fmt(p.i, 3).replace(".", ",")}A)`
+      : `M${opt.value}`;
+  });
+}
+
+function loadAllMemGroups() {
+  batchMemLoading = true;
+  batchMemPending = 10;
+  for (let g = 0; g <= 9; g++) send({ action: "getMemoryGroup", group: g });
+  // Safety: never block other replies longer than a few seconds regardless of responses
+  setTimeout(() => { batchMemLoading = false; }, 3000);
+}
 // One of the settings inputs was edited; when true the polled status stops overwriting them
 let configDirty = false;
 // Last server values of the settings inputs, used to send only what really changed
@@ -291,10 +330,16 @@ function renderStatus(s) {
   }
   document.querySelectorAll(".memgroup-sel").forEach((el) => {
     if (el === document.activeElement) return;
-    // While previewing a profile, keep the protection selector on the chosen group
+    // While a home recall is in flight, keep the user's selection until the PSU confirms
+    if (homePendingGroup != null && !el.id) return;
+    // While previewing a profile in the protection card, keep its selector on the chosen group
     if (viewingGroup != null && el.id === "protMemGroup") return;
     el.value = s.memoryGroup != null ? String(s.memoryGroup) : "0";
   });
+  // The device confirmed the recalled group; the selector may follow it again
+  if (homePendingGroup != null && s.memoryGroup != null && Number(s.memoryGroup) === homePendingGroup) {
+    homePendingGroup = null;
+  }
 
   const keyLockBtn = $("keyLock");
   keyLockBtn.textContent = s.keyLockEnabled ? "🔒" : "🔓";
@@ -309,6 +354,16 @@ function renderStatus(s) {
   if (editable("vIn")) $("vIn").value = fmt(s.voltageSet);
   if (editable("iIn")) $("iIn").value = fmt(s.currentSet, 3);
   if (editable("pIn")) $("pIn").value = s.powerSet != null ? fmt(s.powerSet, 1) : "";
+
+  // Live setpoints go to the current memory group's chip store as well, so keep the
+  // home selector label in sync when V/I-set change
+  const gNow = s.memoryGroup != null ? Number(s.memoryGroup) : -1;
+  if (gNow >= 0 && !isNaN(s.voltageSet) && !isNaN(s.currentSet)) {
+    const c = memProfiles[gNow];
+    if (!c || Math.abs(c.v - s.voltageSet) > 0.001 || Math.abs(c.i - s.currentSet) > 0.0005) {
+      cacheMemGroup({ group: gNow, voltageSet: s.voltageSet, currentSet: s.currentSet });
+    }
+  }
 
   document.querySelectorAll('.model')
     .forEach(el => el.textContent = `Model ${s.model} / v${s.version}`);
@@ -430,12 +485,20 @@ function handleMessage(raw) {
       break;
     case "memoryGroupData":
       if (msg.success) {
-        viewingGroup = Number(msg.group);
-        renderMemoryGroup(msg);
+        cacheMemGroup(msg);
+        if (batchMemPending > 0) {
+          batchMemPending--;
+          if (batchMemPending === 0) batchMemLoading = false;
+        }
+        if (!batchMemLoading) {
+          viewingGroup = Number(msg.group);
+          renderMemoryGroup(msg);
+        }
       } else toast("Не удалось прочитать профиль");
       break;
     case "saveMemoryGroupResponse":
       toast(msg.success ? `Профиль M${msg.group} сохранён` : "Ошибка сохранения профиля");
+      if (msg.success) send({ action: "getMemoryGroup", group: msg.group }); // refresh the selector label
       break;
   }
   // Toast failures from device-setting responses
@@ -607,6 +670,16 @@ document.addEventListener("DOMContentLoaded", () => {
     btn.addEventListener("click", () => applyRow(btn.dataset.action, btn));
   });
 
+  // Home card: selecting a memory group recalls it immediately; the poller stops
+// overwriting the selector until the PSU confirms the new group in its status
+  document.querySelectorAll(".memgroup-row .memgroup-sel").forEach((sel) => {
+    sel.addEventListener("change", () => {
+      const g = parseInt(sel.value);
+      if (isNaN(g)) return;
+      homePendingGroup = g;
+      send({ action: "setMemoryGroup", group: g });
+    });
+  });
   // Protection card: profile preview + Save/Cancel/Recall
   $("protMemGroup").addEventListener("change", (e) => {
     const g = parseInt(e.target.value);
