@@ -3,8 +3,9 @@ const fmt = (v, d = 2) => (isNaN(v) ? "--" : Number(v).toFixed(d));
 
 // ---- Multi-instance: several PSU servers saved in localStorage ----
 const SERVERS_KEY = "xypsu_servers";
+const CURRENT_KEY = "xypsu_current";
 let servers = [];
-let currentIp = location.host;
+let currentIp = localStorage.getItem(CURRENT_KEY) || location.host;
 
 function loadServers() {
   try {
@@ -32,11 +33,41 @@ function renderDeviceSelect() {
     sel.appendChild(opt);
   });
   $("deviceName").textContent = servers.find((s) => s.ip === currentIp)?.name || "PSU";
+  renderServersList();
+}
+
+function renderServersList() {
+  const tbody = $("serversList");
+  if (!tbody) return;
+  tbody.innerHTML = "";
+  servers.forEach((s) => {
+    const tr = document.createElement("tr");
+    const label = document.createElement("td");
+    label.textContent = `${s.name} (${s.ip})`;
+    const ctrl = document.createElement("td");
+    ctrl.className = "ctrl";
+    const selectBtn = document.createElement("button");
+    selectBtn.className = "btn btn-sm btn-primary";
+    selectBtn.textContent = "Выбрать";
+    selectBtn.addEventListener("click", () => switchDevice(s.ip));
+    const delBtn = document.createElement("button");
+    delBtn.className = "btn btn-sm btn-danger";
+    delBtn.textContent = "Удалить";
+    delBtn.addEventListener("click", () => {
+      if (confirm(`Удалить этот сервер? (${s.ip})`)) removeDevice(s.ip);
+    });
+    ctrl.appendChild(selectBtn);
+    ctrl.appendChild(delBtn);
+    tr.appendChild(label);
+    tr.appendChild(ctrl);
+    tbody.appendChild(tr);
+  });
 }
 
 function switchDevice(ip) {
   if (!ip || ip === currentIp) return;
   currentIp = ip;
+  try { localStorage.setItem(CURRENT_KEY, ip); } catch {}
   resetUi();
   renderDeviceSelect();
   toast(`Сервер ${ip}`);
@@ -66,19 +97,31 @@ function addDevice(name, ip) {
   ip = (ip || "").trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
   name = (name || "").trim() || ip || "PSU";
   if (!ip) { toast("Введите IP"); return; }
-  servers.push({ name, ip });
+  const existing = servers.find((s) => s.ip === ip);
+  if (existing) {
+    existing.name = name;
+  } else {
+    servers.push({ name, ip });
+  }
   saveServers();
   switchDevice(ip);
 }
 
 function removeDevice(ip) {
+  const wasCurrent = ip === currentIp;
   servers = servers.filter((s) => s.ip !== ip);
   saveServers();
   if (!servers.length) servers = [{ name: "PSU", ip: location.host }];
+  if (wasCurrent) {
+    currentIp = servers[0].ip;
+    try { localStorage.setItem(CURRENT_KEY, currentIp); } catch {}
+    resetUi();
+  }
   renderDeviceSelect();
-  const sel = $("deviceSelect");
-  currentIp = sel.value || servers[0].ip;
-  connect();
+  if (wasCurrent) {
+    setConn(false);
+    connect();
+  }
 }
 
 // ---- WebSocket: the server pushes fresh status on its own ----
@@ -141,6 +184,14 @@ let protArmed = false;
 let outputOn = false;
 // Profile (memory group) being previewed/edited in the protection card; null = live values
 let viewingGroup = null;
+// One of the settings inputs was edited; when true the polled status stops overwriting them
+let configDirty = false;
+// Last server values of the settings inputs, used to send only what really changed
+let lastConfig = {};
+
+function configInputsDirty() {
+  configDirty = true;
+}
 
 function renderStatus(s) {
   if (!s) return;
@@ -208,7 +259,7 @@ function renderStatus(s) {
     if (editable("pSetI")) $("pSetI").value = fmt(s.currentSet, 3);
   }
 
-  // Settings inputs
+  // Settings inputs (skipped while the user is editing them)
   if (editable("cBacklight")) $("cBacklight").value = s.backlight != null ? s.backlight : "";
   if (editable("cSleep")) $("cSleep").value = s.sleepTimeout != null ? s.sleepTimeout : "";
   if (editable("cSlave")) $("cSlave").value = s.slaveAddress != null ? s.slaveAddress : "";
@@ -219,6 +270,20 @@ function renderStatus(s) {
   if (editable("cMpptThr")) $("cMpptThr").value = s.mpptThreshold != null ? fmt(s.mpptThreshold) : "";
   if (editable("cCpMode")) $("cCpMode").checked = !!s.cpModeEnabled;
   if (editable("cBtf")) $("cBtf").value = fmt(s.batteryCutoff, 3);
+  if (!configDirty) {
+    lastConfig = {
+      backlight: s.backlight != null ? String(s.backlight) : "",
+      sleep: s.sleepTimeout != null ? String(s.sleepTimeout) : "",
+      slave: s.slaveAddress != null ? String(s.slaveAddress) : "",
+      baud: s.baudRateCode != null ? String(s.baudRateCode) : "6",
+      tempunit: s.tempCelsius ? "c" : "f",
+      beeper: !!s.beeper,
+      mppt: !!s.mpptEnabled,
+      mpptThr: s.mpptThreshold != null ? fmt(s.mpptThreshold) : "",
+      cpmode: !!s.cpModeEnabled,
+      btf: fmt(s.batteryCutoff, 3),
+    };
+  }
   document.querySelectorAll(".memgroup-sel").forEach((el) => {
     if (el === document.activeElement) return;
     // While previewing a profile, keep the protection selector on the chosen group
@@ -244,21 +309,67 @@ function renderStatus(s) {
 }
 
 // Populate the protection fields with a memory group's stored profile values
+let profileDirty = false;
+let lastProfile = {};
+
 function renderMemoryGroup(d) {
-  if (editable("pSetV")) $("pSetV").value = fmt(d.voltageSet);
-  if (editable("pSetI")) $("pSetI").value = fmt(d.currentSet, 3);
-  if (editable("pLvp")) $("pLvp").value = fmt(d.lvp);
-  if (editable("pOvp")) $("pOvp").value = fmt(d.ovp);
-  if (editable("pOcp")) $("pOcp").value = fmt(d.ocp, 3);
-  if (editable("pOpp")) $("pOpp").value = fmt(d.opp, 1);
-  if (editable("pOtp")) $("pOtp").value = fmt(d.otp, 1);
-  if (editable("pEtp")) $("pEtp").value = fmt(d.etp, 1);
-  $("pOhpH").value = d.ohpHours != null ? d.ohpHours : "";
-  $("pOhpM").value = d.ohpMinutes != null ? d.ohpMinutes : "";
-  if (editable("pOha")) $("pOha").value = fmt(d.overAmpHours, 3);
-  if (editable("pOwh")) $("pOwh").value = fmt(d.overWattHours, 1);
-  $("pIni").checked = !!d.outputOnAtStartup;
+  const vals = {
+    pSetV: fmt(d.voltageSet),
+    pSetI: fmt(d.currentSet, 3),
+    pLvp: fmt(d.lvp),
+    pOvp: fmt(d.ovp),
+    pOcp: fmt(d.ocp, 3),
+    pOpp: fmt(d.opp, 1),
+    pOtp: fmt(d.otp, 1),
+    pEtp: fmt(d.etp, 1),
+    pOhpH: d.ohpHours != null ? String(d.ohpHours) : "",
+    pOhpM: d.ohpMinutes != null ? String(d.ohpMinutes) : "",
+    pOha: fmt(d.overAmpHours, 3),
+    pOwh: fmt(d.overWattHours, 1),
+    pIni: !!d.outputOnAtStartup,
+  };
+  Object.keys(vals).forEach((id) => {
+    const el = $(id);
+    if (!el) return;
+    if (el.type === "checkbox") el.checked = vals[id];
+    else el.value = vals[id];
+  });
+  lastProfile = vals;
+  profileDirty = false;
   toast(`Профиль M${d.group} загружен`);
+}
+
+function profileInputsDirty() {
+  profileDirty = true;
+}
+
+// Send only the profile fields that really changed
+function saveProfile() {
+  if (viewingGroup == null) { toast("Сначала выберите профиль"); return; }
+  const p = lastProfile;
+  const req = {};
+  const num = (id) => parseFloat($(id).value) || 0;
+  if ($("pSetV").value !== p.pSetV) req.voltageSet = num("pSetV");
+  if ($("pSetI").value !== p.pSetI) req.currentSet = num("pSetI");
+  if ($("pLvp").value !== p.pLvp) req.lvp = num("pLvp");
+  if ($("pOvp").value !== p.pOvp) req.ovp = num("pOvp");
+  if ($("pOcp").value !== p.pOcp) req.ocp = num("pOcp");
+  if ($("pOpp").value !== p.pOpp) req.opp = num("pOpp");
+  if ($("pOtp").value !== p.pOtp) req.otp = num("pOtp");
+  if ($("pEtp").value !== p.pEtp) req.etp = num("pEtp");
+  if ($("pOhpH").value !== p.pOhpH) req.ohpHours = parseInt($("pOhpH").value) || 0;
+  if ($("pOhpM").value !== p.pOhpM) req.ohpMinutes = parseInt($("pOhpM").value) || 0;
+  if ($("pOha").value !== p.pOha) req.overAmpHours = num("pOha");
+  if ($("pOwh").value !== p.pOwh) req.overWattHours = num("pOwh");
+  if ($("pIni").checked !== p.pIni) req.outputOnAtStartup = $("pIni").checked;
+
+  const keys = Object.keys(req);
+  if (!keys.length) { toast("Нет изменений"); return; }
+  req.action = "saveMemoryGroup";
+  req.group = viewingGroup;
+  send(req);
+  profileDirty = false;
+  toast("Сохранено изменений: " + keys.length);
 }
 
 function renderWifi(s) {
@@ -418,6 +529,32 @@ function applyRow(action, btn) {
   }
 }
 
+// Send only the settings that really changed since the last status push
+function saveConfig() {
+  const c = lastConfig;
+  const req = [];
+  if (String($("cBacklight").value) !== c.backlight) req.push({ action: "setBacklight", level: parseInt($("cBacklight").value) });
+  if (String($("cSleep").value) !== c.sleep) req.push({ action: "setSleepTimeout", minutes: parseInt($("cSleep").value) });
+  if (String($("cSlave").value) !== c.slave) req.push({ action: "setSlaveAddress", address: parseInt($("cSlave").value) });
+  if ($("cBaud").value !== c.baud) req.push({ action: "setBaudRate", code: parseInt($("cBaud").value) });
+  if ($("cTempUnit").value !== c.tempunit) req.push({ action: "setTempUnit", celsius: $("cTempUnit").value === "c" });
+  if ($("cBeeper").checked !== c.beeper) req.push({ action: "setBeeper", enabled: $("cBeeper").checked });
+  const mpptChanged = $("cMppt").checked !== c.mppt || String($("cMpptThr").value) !== c.mpptThr;
+  if (mpptChanged) req.push({ action: "setMppt", enable: $("cMppt").checked, threshold: parseFloat($("cMpptThr").value) || 0.8 });
+  if ($("cCpMode").checked !== c.cpmode) req.push({ action: "setCpMode", enabled: $("cCpMode").checked });
+  if (String($("cBtf").value) !== c.btf) req.push({ action: "setBatteryCutoff", current: parseFloat($("cBtf").value) });
+
+  if (!req.length) { toast("Нет изменений"); return; }
+  req.forEach(send);
+  configDirty = false;
+  toast("Отправлено " + req.length + " измен." );
+}
+
+function cancelConfig() {
+  configDirty = false;
+  send({ action: "getData" });
+}
+
 // ---- Boot ----
 document.addEventListener("DOMContentLoaded", () => {
   loadServers();
@@ -434,6 +571,15 @@ document.addEventListener("DOMContentLoaded", () => {
     if (confirm("Перезапустить ESP32?")) send({ action: "restart" });
   });
 
+  // Settings form: mark dirty on any edit, Save/Cancel like the protection card
+  ["cBacklight", "cSleep", "cSlave", "cBaud", "cTempUnit", "cBeeper", "cMppt", "cMpptThr", "cCpMode", "cBtf"].forEach((id) => {
+    const el = $(id);
+    if (!el) return;
+    el.addEventListener(el.dataset.markOnly ? "click" : "change", configInputsDirty);
+  });
+  $("cfgSaveBtn").addEventListener("click", saveConfig);
+  $("cfgCancelBtn").addEventListener("click", cancelConfig);
+
   // Tabs
   document.querySelectorAll("#tabbar button").forEach((btn) => {
     btn.addEventListener("click", () => switchTab(btn.dataset.page));
@@ -441,24 +587,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Multi-instance controls
   $("deviceSelect").addEventListener("change", (e) => switchDevice(e.target.value));
-  $("devAddBtn").addEventListener("click", () => {
-    $("addForm").classList.toggle("hidden");
-    if (!$("addForm").classList.contains("hidden")) {
-      $("newName").focus();
-      $("devAddBtn").innerText = "˅";
-    } else $("devAddBtn").innerText = "+";
-  });
-  // $("addCancel").addEventListener("click", () => $("addForm").classList.add("hidden"));
   $("addOk").addEventListener("click", () => {
     addDevice($("newName").value, $("newIp").value);
     $("newName").value = "";
     $("newIp").value = "";
-    $("addForm").classList.add("hidden");
-    $("devAddBtn").innerText = "+";
   });
-  $("devDelBtn").addEventListener("click", () => {
-    if (confirm(`Удалить этот сервер? (${currentIp})`)) removeDevice(currentIp);
-  });
+  const addIpEnter = (e) => { if (e.key === "Enter") $("addOk").click(); };
+  $("newIp").addEventListener("keydown", addIpEnter);
+  $("newName").addEventListener("keydown", addIpEnter);
 
   // All [data-action] "ok" buttons
   document.querySelectorAll(".btn[data-action]").forEach((btn) => {
@@ -471,29 +607,16 @@ document.addEventListener("DOMContentLoaded", () => {
     if (isNaN(g)) return;
     send({ action: "getMemoryGroup", group: g });
   });
-  $("protSaveBtn").addEventListener("click", () => {
-    if (viewingGroup == null) { toast("Сначала выберите профиль"); return; }
-    send({
-      action: "saveMemoryGroup",
-      group: viewingGroup,
-      voltageSet: parseFloat($("pSetV").value) || 0,
-      currentSet: parseFloat($("pSetI").value) || 0,
-      lvp: parseFloat($("pLvp").value) || 0,
-      ovp: parseFloat($("pOvp").value) || 0,
-      ocp: parseFloat($("pOcp").value) || 0,
-      opp: parseFloat($("pOpp").value) || 0,
-      otp: parseFloat($("pOtp").value) || 0,
-      etp: parseFloat($("pEtp").value) || 0,
-      ohpHours: parseInt($("pOhpH").value) || 0,
-      ohpMinutes: parseInt($("pOhpM").value) || 0,
-      overAmpHours: parseFloat($("pOha").value) || 0,
-      overWattHours: parseFloat($("pOwh").value) || 0,
-      outputOnAtStartup: $("pIni").checked,
-    });
+  ["pSetV", "pSetI", "pLvp", "pOvp", "pOcp", "pOpp", "pOtp", "pEtp", "pOhpH", "pOhpM", "pOha", "pOwh", "pIni"].forEach((id) => {
+    const el = $(id);
+    if (!el) return;
+    el.addEventListener("change", profileInputsDirty);
   });
+  $("protSaveBtn").addEventListener("click", saveProfile);
   $("protCancelBtn").addEventListener("click", () => {
     const g = viewingGroup;
     viewingGroup = null;
+    profileDirty = false;
     $("protMemGroup").value = String(g == null ? 0 : g);
     send({ action: "getData" }); // restore live values
   });

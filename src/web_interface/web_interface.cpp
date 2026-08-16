@@ -956,25 +956,30 @@ void handleDeviceSettingAction(AsyncWebSocketClient* client, const String& actio
     uint16_t buf[14];
     bool ok = false;
     lockModbus();
-    // Read-modify-write so untouched fields of the group (voltage/current set) are preserved
+    // Read-modify-write so fields not sent by the client are preserved
     ok = powerSupply->readRegisters(REG_CV_SET + ((uint16_t)group * 0x0010u), 14, buf);
     if (ok) {
-      buf[2] = (uint16_t)lroundf((doc["lvp"] | 0.0f) * 100.0f);
-      buf[3] = (uint16_t)lroundf((doc["ovp"] | 0.0f) * 100.0f);
-      buf[4] = (uint16_t)lroundf((doc["ocp"] | 0.0f) * 1000.0f);
-      buf[5] = (uint16_t)lroundf((doc["opp"] | 0.0f) * 10.0f);
-      buf[6] = (uint16_t)(doc["ohpHours"] | 0);
-      buf[7] = (uint16_t)(doc["ohpMinutes"] | 0);
-      uint32_t oah = (uint32_t)lroundf((doc["overAmpHours"] | 0.0f) * 1000.0f);
-      buf[8] = oah & 0xFFFF;
-      buf[9] = (oah >> 16) & 0xFFFF;
-      uint32_t owh = (uint32_t)lroundf((doc["overWattHours"] | 0.0f) * 100.0f);
-      buf[10] = owh & 0xFFFF;
-      buf[11] = (owh >> 16) & 0xFFFF;
-      buf[12] = (uint16_t)lroundf((doc["otp"] | 0.0f) * 10.0f);
-      buf[13] = (buf[13] & 0xFFFE) | ((doc["outputOnAtStartup"] | false) ? 1 : 0);
+      if (doc.containsKey("lvp")) buf[2] = (uint16_t)lroundf((doc["lvp"] | 0.0f) * 100.0f);
+      if (doc.containsKey("ovp")) buf[3] = (uint16_t)lroundf((doc["ovp"] | 0.0f) * 100.0f);
+      if (doc.containsKey("ocp")) buf[4] = (uint16_t)lroundf((doc["ocp"] | 0.0f) * 1000.0f);
+      if (doc.containsKey("opp")) buf[5] = (uint16_t)lroundf((doc["opp"] | 0.0f) * 10.0f);
+      if (doc.containsKey("ohpHours")) buf[6] = (uint16_t)(doc["ohpHours"] | 0);
+      if (doc.containsKey("ohpMinutes")) buf[7] = (uint16_t)(doc["ohpMinutes"] | 0);
+      if (doc.containsKey("overAmpHours")) {
+        uint32_t oah = (uint32_t)lroundf((doc["overAmpHours"] | 0.0f) * 1000.0f);
+        buf[8] = oah & 0xFFFF;
+        buf[9] = (oah >> 16) & 0xFFFF;
+      }
+      if (doc.containsKey("overWattHours")) {
+        uint32_t owh = (uint32_t)lroundf((doc["overWattHours"] | 0.0f) * 100.0f);
+        buf[10] = owh & 0xFFFF;
+        buf[11] = (owh >> 16) & 0xFFFF;
+      }
+      if (doc.containsKey("otp")) buf[12] = (uint16_t)lroundf((doc["otp"] | 0.0f) * 10.0f);
+      if (doc.containsKey("outputOnAtStartup"))
+        buf[13] = (buf[13] & 0xFFFE) | ((doc["outputOnAtStartup"] | false) ? 1 : 0);
       ok = powerSupply->writeRegisters(REG_CV_SET + ((uint16_t)group * 0x0010u), 14, buf);
-      if (ok) {
+      if (ok && doc.containsKey("etp")) {
         uint16_t etpReg = (uint16_t)lroundf((doc["etp"] | 0.0f) * 10.0f);
         ok = powerSupply->writeRegister(REG_S_ETP, etpReg);
       }

@@ -18,14 +18,6 @@
     </div>
     <div class="device-bar row">
       <select id="deviceSelect" class="device-select"></select>
-      <button id="devAddBtn" class="btn btn-primary">+</button>
-      <button id="devDelBtn" class="btn btn-ghost" title="Удалить устройство">⤬</button>
-    </div>
-    <div id="addForm" class="hidden device-bar row">
-      <input id="newName" type="text" placeholder="Имя (PSU)">
-      <input id="newIp" type="text" placeholder="192.168.1.100">
-      <button id="addOk" class="btn btn-primary">OK</button>
-      <!-- <button id="addCancel" class="btn btn-ghost">✕</button> -->
     </div>
   </header>
 
@@ -114,17 +106,17 @@
         <h2>Профиль и защита</h2>
         <table class="editable">
           <tr><td>M-Pre</td><td class="ctrl"><select id="protMemGroup" class="memgroup-sel"><option value="0">M0</option><option value="1">M1</option><option value="2">M2</option><option value="3">M3</option><option value="4">M4</option><option value="5">M5</option><option value="6">M6</option><option value="7">M7</option><option value="8">M8</option><option value="9">M9</option></select></td></tr>
-          <tr><td>V-set (V)</td><td class="ctrl"><input id="pSetV" type="number" step="0.01" min="0"></td></tr>
-          <tr><td>I-set (A)</td><td class="ctrl"><input id="pSetI" type="number" step="0.001" min="0"></td></tr>
-          <tr><td>S-LVP (V)</td><td class="ctrl"><input id="pLvp" type="number" step="0.01" min="0"></td></tr>
-          <tr><td>S-OVP (V)</td><td class="ctrl"><input id="pOvp" type="number" step="0.01" min="0"></td></tr>
-          <tr><td>S-OCP (A)</td><td class="ctrl"><input id="pOcp" type="number" step="0.001" min="0"></td></tr>
-          <tr><td>S-OPP (W)</td><td class="ctrl"><input id="pOpp" type="number" step="0.1" min="0"></td></tr>
-          <tr><td>S-OTP (°C)</td><td class="ctrl"><input id="pOtp" type="number" step="1" min="0"></td></tr>
-          <tr><td>S-ETP (°C)</td><td class="ctrl"><input id="pEtp" type="number" step="1" min="0"></td></tr>
-          <tr><td>S-OHP (чч:мм)</td><td class="ctrl"><input id="pOhpH" type="number" step="1" min="0" max="99" placeholder="ч"><input id="pOhpM" type="number" step="1" min="0" max="59" placeholder="мин"></td></tr>
-          <tr><td>S-OAH (Ah)</td><td class="ctrl"><input id="pOha" type="number" step="0.001" min="0"></td></tr>
-          <tr><td>S-OWH (Wh)</td><td class="ctrl"><input id="pOwh" type="number" step="0.01" min="0"></td></tr>
+          <tr><td>V-set</td><td class="ctrl"><div class="input-wrap"><input id="pSetV" type="number" step="0.01" min="0"><span class="suffix">V</span></div></td></tr>
+          <tr><td>I-set</td><td class="ctrl"><div class="input-wrap"><input id="pSetI" type="number" step="0.001" min="0"><span class="suffix">A</span></div></td></tr>
+          <tr><td>S-LVP</td><td class="ctrl"><div class="input-wrap"><input id="pLvp" type="number" step="0.01" min="0"><span class="suffix">V</span></div></td></tr>
+          <tr><td>S-OVP</td><td class="ctrl"><div class="input-wrap"><input id="pOvp" type="number" step="0.01" min="0"><span class="suffix">V</span></div></td></tr>
+          <tr><td>S-OCP</td><td class="ctrl"><div class="input-wrap"><input id="pOcp" type="number" step="0.001" min="0"><span class="suffix">A</span></div></td></tr>
+          <tr><td>S-OPP</td><td class="ctrl"><div class="input-wrap"><input id="pOpp" type="number" step="0.1" min="0"><span class="suffix">W</span></div></td></tr>
+          <tr><td>S-OTP</td><td class="ctrl"><div class="input-wrap"><input id="pOtp" type="number" step="1" min="0"><span class="suffix">°C</span></div></td></tr>
+          <tr><td>S-ETP</td><td class="ctrl"><div class="input-wrap"><input id="pEtp" type="number" step="1" min="0"><span class="suffix">°C</span></div></td></tr>
+          <tr><td>S-OHP</td><td class="ctrl"><div class="input-wrap"><input id="pOhpH" type="number" step="1" min="0" max="99" placeholder="ч"><span class="suffix">ч</span></div><div class="input-wrap"><input id="pOhpM" type="number" step="1" min="0" max="59" placeholder="мин"><span class="suffix">мин</span></div></td></tr>
+          <tr><td>S-OAH</td><td class="ctrl"><div class="input-wrap"><input id="pOha" type="number" step="0.001" min="0"><span class="suffix">Ah</span></div></td></tr>
+          <tr><td>S-OWH</td><td class="ctrl"><div class="input-wrap"><input id="pOwh" type="number" step="0.01" min="0"><span class="suffix">Wh</span></div></td></tr>
           <tr><td>S-INI</td><td class="ctrl"><input id="pIni" type="checkbox"></td></tr>
         </table>
         <br/>
@@ -141,19 +133,33 @@
       <section class="card" id="cfgCard">
         <h2>Настройки устройства</h2>
         <table class="editable">
-          <tr><td>Подсветка</td><td class="ctrl"><input id="cBacklight" type="number" step="1" min="1" max="5"><button class="btn btn-sm btn-primary" data-action="backlight">ok</button></td></tr>
-          <tr><td>Сон (мин)</td><td class="ctrl"><input id="cSleep" type="number" step="1" min="0" max="255"><button class="btn btn-sm btn-primary" data-action="sleep">ok</button></td></tr>
-          <tr><td>Slave адрес</td><td class="ctrl"><input id="cSlave" type="number" step="1" min="0" max="247"><button class="btn btn-sm btn-primary" data-action="slave">ok</button></td></tr>
-          <tr><td>Baud rate</td><td class="ctrl"><select id="cBaud"><option value="0">9600</option><option value="1">14400</option><option value="2">19200</option><option value="3">38400</option><option value="4">56000</option><option value="5">576000</option><option value="6" selected>115200</option><option value="7">2400</option><option value="8">4800</option></select><button class="btn btn-sm btn-primary" data-action="baud">ok</button></td></tr>
-          <tr><td>Единицы темп.</td><td class="ctrl"><select id="cTempUnit"><option value="c">°C</option><option value="f">°F</option></select><button class="btn btn-sm btn-primary" data-action="tempunit">ok</button></td></tr>
-          <tr><td>Зуммер</td><td class="ctrl"><input id="cBeeper" type="checkbox"><button class="btn btn-sm btn-primary" data-action="beeper">ok</button></td></tr>
-          <tr><td>MPPT</td><td class="ctrl"><input id="cMppt" type="checkbox"><button class="btn btn-sm btn-primary" data-action="mppt">ok</button><input id="cMpptThr" type="number" step="0.01" min="0.75" max="0.88" placeholder="порог" style="width:80px"></td></tr>
-          <tr><td>CP (CW) mode</td><td class="ctrl"><input id="cCpMode" type="checkbox"><button class="btn btn-sm btn-primary" data-action="cpmode">ok</button></td></tr>
-          <tr><td>Ток откл. АКБ (A)</td><td class="ctrl"><input id="cBtf" type="number" step="0.001" min="0"><button class="btn btn-sm btn-primary" data-action="btf">ok</button></td></tr>
+          <tr><td>Подсветка</td><td class="ctrl"><input id="cBacklight" type="number" step="1" min="1" max="5"></td></tr>
+          <tr><td>Сон (мин)</td><td class="ctrl"><input id="cSleep" type="number" step="1" min="0" max="255"></td></tr>
+          <tr><td>Slave адрес</td><td class="ctrl"><input id="cSlave" type="number" step="1" min="0" max="247"></td></tr>
+          <tr><td>Baud rate</td><td class="ctrl"><select id="cBaud"><option value="0">9600</option><option value="1">14400</option><option value="2">19200</option><option value="3">38400</option><option value="4">56000</option><option value="5">576000</option><option value="6" selected>115200</option><option value="7">2400</option><option value="8">4800</option></select></td></tr>
+          <tr><td>Единицы темп.</td><td class="ctrl"><select id="cTempUnit"><option value="c">°C</option><option value="f">°F</option></select></td></tr>
+          <tr><td>Зуммер</td><td class="ctrl"><input id="cBeeper" type="checkbox"></td></tr>
+          <tr><td>MPPT</td><td class="ctrl"><input id="cMppt" type="checkbox"><input id="cMpptThr" type="number" step="0.01" min="0.75" max="0.88" placeholder="порог" style="width:80px"></td></tr>
+          <tr><td>CP (CW) mode</td><td class="ctrl"><input id="cCpMode" type="checkbox"></td></tr>
+          <tr><td>Ток откл. АКБ (A)</td><td class="ctrl"><input id="cBtf" type="number" step="0.001" min="0"></td></tr>
         </table>
+        <div class="row memgroup-actions">
+          <button id="cfgSaveBtn" class="btn btn-sm btn-primary">Save</button>
+          <button id="cfgCancelBtn" class="btn btn-sm btn-ghost">Cancel</button>
+        </div>
         <div class="row">
           <button id="restartBtn" class="btn btn-sm btn-danger">Перезапустить ESP</button>
           <button id="psuResetBtn" class="btn btn-sm btn-danger">Сброс БП к заводским</button>
+        </div>
+      </section>
+
+      <section class="card" id="serversCard">
+        <h2>Серверы</h2>
+        <table id="serversList" class="editable"></table>
+        <div class="row">
+          <input id="newName" type="text" placeholder="Имя (PSU)">
+          <input id="newIp" type="text" placeholder="192.168.1.100">
+          <button id="addOk" class="btn btn-ghost" title="Добавить сервер">+</button>
         </div>
       </section>
 
