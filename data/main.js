@@ -446,7 +446,19 @@ function switchTab(tab) {
   document.querySelectorAll("#tabbar button").forEach((b) => {
     b.classList.toggle("active", b.dataset.page === tab);
   });
+  // Keep the selected tab in the URL so a reload stays on it
+  if (location.hash !== "#" + tab) {
+    try { history.replaceState(null, "", "#" + tab); } catch {}
+  }
 }
+
+// Restore the tab from the URL hash on load
+function initTab() {
+  const tab = (location.hash || "").replace(/^#\//, "").replace(/^#/, "") || "main";
+  if (!["main", "prot", "cfg"].includes(tab)) tab = "main";
+  switchTab(tab);
+}
+window.addEventListener("hashchange", initTab);
 
 // ---- Message handling ----
 function handleMessage(raw) {
@@ -628,6 +640,7 @@ function cancelConfig() {
 document.addEventListener("DOMContentLoaded", () => {
   loadServers();
   renderDeviceSelect();
+  initTab();
 
   $("outBtn").addEventListener("click", toggleOutput);
   $("keyLock").addEventListener("click", toggleKeyLock);
