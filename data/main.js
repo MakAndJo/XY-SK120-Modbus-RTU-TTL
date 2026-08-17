@@ -211,7 +211,7 @@ function cacheMemGroup(d) {
   if (!d || d.group == null) return;
   memProfiles[d.group] = { v: d.voltageSet, i: d.currentSet };
   // Home selector only: the protection tab shows the values in the V-set/I-set fields below
-  const sel = document.querySelector(".memgroup-row .memgroup-sel");
+  const sel = document.querySelector("#page-main .memgroup-sel");
   if (!sel) return;
   [...sel.options].forEach((opt) => {
     const p = memProfiles[opt.value];
@@ -671,8 +671,8 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // Home card: selecting a memory group recalls it immediately; the poller stops
-// overwriting the selector until the PSU confirms the new group in its status
-  document.querySelectorAll(".memgroup-row .memgroup-sel").forEach((sel) => {
+  // overwriting the selector until the PSU confirms the new group in its status
+  document.querySelectorAll("#page-main .memgroup-sel").forEach((sel) => {
     sel.addEventListener("change", () => {
       const g = parseInt(sel.value);
       if (isNaN(g)) return;
