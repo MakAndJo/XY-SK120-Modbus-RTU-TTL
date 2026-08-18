@@ -1,6 +1,30 @@
 const $ = (id) => document.getElementById(id);
 const fmt = (v, d = 2) => (isNaN(v) ? "--" : Number(v).toFixed(d));
 
+// ---- WiFi module (host 0x0030-0x0034) formatters ----
+function formatHostType(v) {
+  if (v == null || v === 0) return "отсутствует";
+  if (v === 0x3B3A) return "WiFi (0x3B3A)";
+  return "0x" + v.toString(16).toUpperCase();
+}
+function formatWifiConfig(v) {
+  if (v == null || v === 0) return "0 — недействительно";
+  if (v === 1) return "1 — Touch pairing";
+  if (v === 2) return "2 — AP pairing";
+  return String(v);
+}
+function formatWifiStatus(v) {
+  if (v == null || v === 0) return "0 — сеть недействительна";
+  if (v === 1) return "1 — подключено к роутеру";
+  if (v === 2) return "2 — подключено к серверу";
+  if (v === 3) return "3 — Touch pairing";
+  if (v === 4) return "4 — AP pairing";
+  return String(v);
+}
+function formatIpv4(v) {
+  return [((v >>> 24) & 255), ((v >>> 16) & 255), ((v >>> 8) & 255), (v & 255)].join(".");
+}
+
 // ---- Multi-instance: several PSU servers saved in localStorage ----
 const SERVERS_KEY = "xypsu_servers";
 const CURRENT_KEY = "xypsu_current";
@@ -314,6 +338,19 @@ function renderStatus(s) {
   if (editable("cMpptThr")) $("cMpptThr").value = s.mpptThreshold != null ? fmt(s.mpptThreshold) : "";
   if (editable("cCpMode")) $("cCpMode").checked = !!s.cpModeEnabled;
   if (editable("cBtf")) $("cBtf").value = fmt(s.batteryCutoff, 3);
+  if (editable("cBch")) $("cBch").checked = !!s.bchEnabled;
+  if (editable("cBchThr")) $("cBchThr").value = s.bchThreshold != null ? fmt(s.bchThreshold) : "";
+  if (editable("cBtfEn")) $("cBtfEn").checked = !!s.btfEnabled;
+  if (editable("cBtfCut")) $("cBtfCut").value = s.btfCutoff != null ? fmt(s.btfCutoff, 3) : "";
+  if (editable("cClof")) $("cClof").checked = !!s.clofEnabled;
+
+  // WiFi module (host) status
+  if (s.hostType != null) $("hostType").textContent = formatHostType(s.hostType);
+  if (s.wifiConfig != null) $("wifiConfig").textContent = formatWifiConfig(s.wifiConfig);
+  if (s.wifiStatus != null) $("wifiStatus").textContent = formatWifiStatus(s.wifiStatus);
+  if (s.ipv4 != null && s.ipv4 > 0) $("wifiIpPsu").textContent = formatIpv4(s.ipv4);
+  else $("wifiIpPsu").textContent = "--";
+
   if (!configDirty) {
     lastConfig = {
       backlight: s.backlight != null ? String(s.backlight) : "",
@@ -326,6 +363,11 @@ function renderStatus(s) {
       mpptThr: s.mpptThreshold != null ? fmt(s.mpptThreshold) : "",
       cpmode: !!s.cpModeEnabled,
       btf: fmt(s.batteryCutoff, 3),
+      bch: !!s.bchEnabled,
+      bchThr: s.bchThreshold != null ? fmt(s.bchThreshold) : "",
+      btfEn: !!s.btfEnabled,
+      btfCut: s.btfCutoff != null ? fmt(s.btfCutoff, 3) : "",
+      clof: !!s.clofEnabled,
     };
   }
   document.querySelectorAll(".memgroup-sel").forEach((el) => {
@@ -624,6 +666,11 @@ function saveConfig() {
   if (mpptChanged) req.push({ action: "setMppt", enable: $("cMppt").checked, threshold: parseFloat($("cMpptThr").value) || 0.8 });
   if ($("cCpMode").checked !== c.cpmode) req.push({ action: "setCpMode", enabled: $("cCpMode").checked });
   if (String($("cBtf").value) !== c.btf) req.push({ action: "setBatteryCutoff", current: parseFloat($("cBtf").value) });
+  const bchChanged = $("cBch").checked !== c.bch || String($("cBchThr").value) !== c.bchThr;
+  if (bchChanged) req.push({ action: "setBch", enabled: $("cBch").checked, threshold: parseFloat($("cBchThr").value) || 0.8 });
+  if ($("cBtfEn").checked !== c.btfEn) req.push({ action: "setBtfEnable", enabled: $("cBtfEn").checked });
+  if ($("cBtfCut").value !== c.btfCut) req.push({ action: "setBtfCutoff", current: parseFloat($("cBtfCut").value) });
+  if ($("cClof").checked !== c.clof) req.push({ action: "setClof", enabled: $("cClof").checked });
 
   if (!req.length) { toast("Нет изменений"); return; }
   req.forEach(send);
@@ -646,6 +693,7 @@ document.addEventListener("DOMContentLoaded", () => {
   $("keyLock").addEventListener("click", toggleKeyLock);
   $("wifiAddBtn").addEventListener("click", addNetwork);
   $("wifiRefresh").addEventListener("click", loadWifiStatus);
+  $("wifiModActivate").addEventListener("click", () => send({ action: "activateWifi" }));
   $("psuResetBtn").addEventListener("click", () => {
     if (confirm("Сбросить БП к заводским настройкам?")) send({ action: "psuReset" });
   });
@@ -654,7 +702,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // Settings form: mark dirty on any edit, Save/Cancel like the protection card
-  ["cBacklight", "cSleep", "cSlave", "cBaud", "cTempUnit", "cBeeper", "cMppt", "cMpptThr", "cCpMode", "cBtf"].forEach((id) => {
+  ["cBacklight", "cSleep", "cSlave", "cBaud", "cTempUnit", "cBeeper", "cMppt", "cMpptThr", "cCpMode", "cBtf", "cBch", "cBchThr", "cBtfEn", "cBtfCut", "cClof"].forEach((id) => {
     const el = $(id);
     if (!el) return;
     el.addEventListener(el.dataset.markOnly ? "click" : "change", configInputsDirty);

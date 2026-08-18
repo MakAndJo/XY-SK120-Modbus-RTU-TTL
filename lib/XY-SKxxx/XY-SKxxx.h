@@ -111,6 +111,22 @@ but not in the Modbus register map documentation
 #define REG_CP_ENABLE     0x0022  // Constant Power mode enable/disable, 2 bytes, 0 decimal places, unit: 0/1, Read and Write
 #define REG_CP_SET        0x0023  // Constant Power setting, 2 bytes, 1 decimal place, unit: W, Read and Write
 
+// BCH/BTF/CLOF settings (battery charging / output-off on group change)
+// Discovered from SK150/SK150S ESPHome integration, not in the official XY-SK120 register map
+#define REG_BCH_ENABLE     0x0029  // BCH enable (battery charging), 0/1, Read and Write
+#define REG_BCH_THRESHOLD  0x002A  // BCH threshold, 2 decimal places, unit: V, Read and Write
+#define REG_BTF_ENABLE     0x002B  // BTF enable (battery cutoff), 0/1, Read and Write
+#define REG_BTF_CUTOFF     0x002C  // BTF cutoff current, 3 decimal places, unit: A, Read and Write
+#define REG_CLOF_ENABLE    0x002D  // CLOF (force output off on memory group switch), 0/1, Read and Write
+
+// Host / WiFi module registers (Sinilink ESP8285H16 / XY-WFPOW). Writing
+// {0x3B3A, 2, 4, ip_hi, ip_lo} to 0x0030-0x0034 activates the WiFi host.
+#define REG_MASTER     0x0030  // Host type, 0x3B3A = WiFi host, Read and Write
+#define REG_WIFI_CONFIG 0x0031 // WiFi configuration status, 0=Invalid, 1=Pairing, 2=Valid, Read and Write
+#define REG_WIFI_STATUS 0x0032 // WiFi status, 0=Invalid, 1=Router, 2=Server, 3=Touch, 4=Connected, Read and Write
+#define REG_IPV4_H      0x0033  // IP address high word (octet1<<8 | octet2), Read and Write
+#define REG_IPV4_L      0x0034  // IP address low word (octet3<<8 | octet4), Read and Write
+
 // BCH setting (Battery Charging)
 
 
@@ -456,6 +472,26 @@ public:
   bool getBatteryCutoffCurrent(float &current);
   float getCachedBatteryCutoffCurrent(bool refresh = false);
   bool updateBatteryCutoffCurrent(bool force = false);
+
+  // Battery charging / output-off (BCH/BTF/CLOF) settings methods
+  bool setBatteryChargingEnable(bool enabled);
+  bool getBatteryChargingEnable(bool &enabled);
+  bool setBatteryChargingThreshold(float threshold);
+  bool getBatteryChargingThreshold(float &threshold);
+  bool setBatteryCutoffEnable(bool enabled);
+  bool getBatteryCutoffEnable(bool &enabled);
+  bool setBatteryCutoffCurrentBtf(float current);
+  bool getBatteryCutoffCurrentBtf(float &current);
+  bool setOutputOffOnGroupChange(bool enabled);
+  bool getOutputOffOnGroupChange(bool &enabled);
+
+  // Host / WiFi module methods
+  bool setWifiHostInfo(uint16_t hostType, uint16_t wifiConfig, uint16_t wifiStatus,
+                       uint32_t ipv4);
+  bool getWifiHostInfo(uint16_t &hostType, uint16_t &wifiConfig, uint16_t &wifiStatus,
+                       uint32_t &ipv4);
+  bool activateWifiModule(uint32_t ipv4);
+  bool setMasterCode(uint16_t hostType);
 
   // Operating mode access method
   OperatingMode getOperatingMode(bool refresh = false);

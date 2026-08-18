@@ -19,6 +19,10 @@ void sendOperatingModeDetails(AsyncWebSocketClient* client);
 // Server-side polling: read fresh PSU status and push it to all connected clients
 void pollAndBroadcastPSUStatus();
 
+// ESPHome-style keep-alive of the WiFi host registers (0x0030-0x0034).
+// Re-writes the block every ~1s while a WiFi host (0x3B3A) is active.
+void wifiModuleKeepAlive();
+
 // Force the next poll to broadcast even if the status is unchanged (new client)
 void forceStatusBroadcast();
 

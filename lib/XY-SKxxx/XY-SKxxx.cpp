@@ -294,3 +294,126 @@ bool XY_SKxxx::getBatteryCutoffCurrent(float &current) {
   
   return false;
 }
+
+// ---- Battery charging / output-off settings (BCH/BTF/CLOF) ----
+
+bool XY_SKxxx::setBatteryChargingEnable(bool enabled) {
+  waitForSilentInterval();
+  return writeRegister(REG_BCH_ENABLE, enabled ? 1 : 0);
+}
+
+bool XY_SKxxx::getBatteryChargingEnable(bool &enabled) {
+  uint16_t value;
+  waitForSilentInterval();
+  if (readRegister(REG_BCH_ENABLE, value)) {
+    enabled = (value != 0);
+    return true;
+  }
+  return false;
+}
+
+bool XY_SKxxx::setBatteryChargingThreshold(float threshold) {
+  if (threshold < 0.0f) return false;
+  uint16_t value = (uint16_t)(threshold * 100.0f);
+  waitForSilentInterval();
+  return writeRegister(REG_BCH_THRESHOLD, value);
+}
+
+bool XY_SKxxx::getBatteryChargingThreshold(float &threshold) {
+  uint16_t value;
+  waitForSilentInterval();
+  if (readRegister(REG_BCH_THRESHOLD, value)) {
+    threshold = value / 100.0f;
+    return true;
+  }
+  return false;
+}
+
+bool XY_SKxxx::setBatteryCutoffEnable(bool enabled) {
+  waitForSilentInterval();
+  return writeRegister(REG_BTF_ENABLE, enabled ? 1 : 0);
+}
+
+bool XY_SKxxx::getBatteryCutoffEnable(bool &enabled) {
+  uint16_t value;
+  waitForSilentInterval();
+  if (readRegister(REG_BTF_ENABLE, value)) {
+    enabled = (value != 0);
+    return true;
+  }
+  return false;
+}
+
+bool XY_SKxxx::setBatteryCutoffCurrentBtf(float current) {
+  if (current < 0.0f) return false;
+  uint16_t value = (uint16_t)(current * 1000.0f);
+  waitForSilentInterval();
+  return writeRegister(REG_BTF_CUTOFF, value);
+}
+
+bool XY_SKxxx::getBatteryCutoffCurrentBtf(float &current) {
+  uint16_t value;
+  waitForSilentInterval();
+  if (readRegister(REG_BTF_CUTOFF, value)) {
+    current = value / 1000.0f;
+    return true;
+  }
+  return false;
+}
+
+bool XY_SKxxx::setOutputOffOnGroupChange(bool enabled) {
+  waitForSilentInterval();
+  return writeRegister(REG_CLOF_ENABLE, enabled ? 1 : 0);
+}
+
+bool XY_SKxxx::getOutputOffOnGroupChange(bool &enabled) {
+  uint16_t value;
+  waitForSilentInterval();
+  if (readRegister(REG_CLOF_ENABLE, value)) {
+    enabled = (value != 0);
+    return true;
+  }
+  return false;
+}
+
+// ---- Host / WiFi module methods ----
+
+bool XY_SKxxx::setMasterCode(uint16_t hostType) {
+  waitForSilentInterval();
+  return writeRegister(REG_MASTER, hostType);
+}
+
+bool XY_SKxxx::setWifiHostInfo(uint16_t hostType, uint16_t wifiConfig, uint16_t wifiStatus,
+                               uint32_t ipv4) {
+  uint16_t buf[5] = {
+    hostType,
+    wifiConfig,
+    wifiStatus,
+    (uint16_t)((ipv4 >> 16) & 0xFFFF),
+    (uint16_t)(ipv4 & 0xFFFF)
+  };
+  waitForSilentInterval();
+  return writeRegisters(REG_MASTER, 5, buf);
+}
+
+bool XY_SKxxx::getWifiHostInfo(uint16_t &hostType, uint16_t &wifiConfig, uint16_t &wifiStatus,
+                               uint32_t &ipv4) {
+  uint16_t buf[5];
+  waitForSilentInterval();
+  if (!readRegisters(REG_MASTER, 5, buf)) return false;
+  hostType = buf[0];
+  wifiConfig = buf[1];
+  wifiStatus = buf[2];
+  ipv4 = ((uint32_t)buf[3] << 16) | buf[4];
+  return true;
+}
+
+bool XY_SKxxx::activateWifiModule(uint32_t ipv4) {
+  // Mimics the OEM XY-WFPOW WiFi module. Official SK120X register map:
+  //   WIFI-CONFIG: 0=invalid 1=Touch pairing 2=AP pairing
+  //   WIFI-STATUS: 0=invalid network 1=router 2=connected to server
+  //               3=Touch pairing 4=AP pairing
+  // status=4 is the empirically stable "online" state that makes the PSU show
+  // the module address; status=2 makes it blink in pairing mode.
+  return setWifiHostInfo(0x3B3A, 2, 4, ipv4);
+}

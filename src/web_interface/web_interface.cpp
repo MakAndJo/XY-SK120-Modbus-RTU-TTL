@@ -260,6 +260,20 @@ struct PSUStatusData {
   float mpptThreshold;   // MPPT_THRESHOLD (0.00-1.00)
   float batteryCutoff;   // BTF (A)
   bool outputOnAtStartup; // S_INI
+  float etp;             // S_ETP (external temperature protection)
+  
+  // Battery charging / output-off settings (SK150S, undocumented in SK120 docs)
+  bool bchEnabled;       // BCH_ENABLE (0x0029)
+  float bchThreshold;    // BCH_THRESHOLD (0x002A)
+  bool btfEnabled;       // BTF_ENABLE (0x002B)
+  float btfCutoff;       // BTF_CUTOFF (0x002C)
+  bool clofEnabled;      // CLOF_ENABLE (0x002D)
+
+  // Host / WiFi module registers (0x0030-0x0034)
+  uint16_t hostType;     // MASTER (0x3B3A = WiFi host)
+  uint16_t wifiConfig;   // WIFI-CONFIG (0=Invalid,1=Pairing,2=Valid)
+  uint16_t wifiStatus;   // WIFI-STATUS (0-4)
+  uint32_t ipv4;         // IP from IPV4-H/IPV4-L
   
   // Extended protection settings
   uint16_t ohpHours, ohpMinutes; // OHP time
@@ -358,10 +372,10 @@ bool readPSUStatusBatchedLocked(PSUStatusData& data) {
     data.powerSet = buf[4] / 10.0f;
   }
   
-  // Batch 7: 0x0050 - 0x005D (14 contiguous): CV_SET, CC_SET, S_LVP, S_OVP,
+  // Batch 7: 0x0050 - 0x005E (15 contiguous): CV_SET, CC_SET, S_LVP, S_OVP,
   // S_OCP, S_OPP, S_OHP_H, S_OHP_M, S_OAH_L, S_OAH_H, S_OWH_L, S_OWH_H,
-  // S_OTP, S_INI
-  if (!powerSupply->readRegisters(REG_CV_SET, 14, buf)) {
+  // S_OTP, S_INI, S_ETP
+  if (!powerSupply->readRegisters(REG_CV_SET, 15, buf)) {
     valid = false;
   } else {
     data.voltageSet = buf[0] / 100.0f;
@@ -378,9 +392,33 @@ bool readPSUStatusBatchedLocked(PSUStatusData& data) {
     data.overWattHours = owh * 0.01f;
     data.otp = buf[12] / 10.0f;
     data.outputOnAtStartup = (buf[13] & 0x0001) != 0;
+    data.etp = buf[14] / 10.0f;
     // Working setpoints always win - they reflect the active group recall
     data.voltageSet = liveVoltageSet;
     data.currentSet = liveCurrentSet;
+  }
+
+  // Batch 8: BCH_ENABLE(0x0029), BCH_THRESHOLD(0x002A), BTF_ENABLE(0x002B),
+  // BTF_CUTOFF(0x002C), CLOF_ENABLE(0x002D) - battery charging/output-off settings
+  if (!powerSupply->readRegisters(0x0029, 5, buf)) {
+    valid = false;
+  } else {
+    data.bchEnabled = (buf[0] != 0);
+    data.bchThreshold = buf[1] / 100.0f;
+    data.btfEnabled = (buf[2] != 0);
+    data.btfCutoff = buf[3] / 1000.0f;
+    data.clofEnabled = (buf[4] != 0);
+  }
+
+  // Batch 9: MASTER(0x0030), WIFI_CONFIG(0x0031), WIFI_STATUS(0x0032),
+  // IPV4_H(0x0033), IPV4_L(0x0034) - host type / WiFi module info
+  if (!powerSupply->readRegisters(0x0030, 5, buf)) {
+    valid = false;
+  } else {
+    data.hostType = buf[0];
+    data.wifiConfig = buf[1];
+    data.wifiStatus = buf[2];
+    data.ipv4 = ((uint32_t)buf[3] << 16) | buf[4];
   }
   
   if (!valid) return false;
@@ -429,6 +467,20 @@ String buildStatusJSON(const PSUStatusData& data) {
   doc["mpptThreshold"] = data.mpptThreshold;
   doc["batteryCutoff"] = data.batteryCutoff;
   doc["outputOnAtStartup"] = data.outputOnAtStartup;
+  doc["etp"] = data.etp;
+  
+  // Battery charging / output-off settings
+  doc["bchEnabled"] = data.bchEnabled;
+  doc["bchThreshold"] = data.bchThreshold;
+  doc["btfEnabled"] = data.btfEnabled;
+  doc["btfCutoff"] = data.btfCutoff;
+  doc["clofEnabled"] = data.clofEnabled;
+
+  // Host / WiFi module info
+  doc["hostType"] = data.hostType;
+  doc["wifiConfig"] = data.wifiConfig;
+  doc["wifiStatus"] = data.wifiStatus;
+  doc["ipv4"] = data.ipv4;
   
   // Extended protections
   doc["ohpHours"] = data.ohpHours;
@@ -531,6 +583,31 @@ void pollAndBroadcastPSUStatus() {
   }
   lastResponse = response;
   ws.textAll(response);
+}
+
+// Keep the WiFi host alive: the PSU drops the module's address and blinks in
+// pairing mode if the host block goes stale, so re-write MASTER + WIFI-STATUS +
+// IP every second. Never touch WIFI-CONFIG (0x0031) - that lets the PSU's own
+// conf NONE/AP/TOUCH setting be applied and kept by the user.
+// WIFI-STATUS=4 is the empirically stable "online" state (2 makes it blink).
+void wifiModuleKeepAlive() {
+  if (!powerSupply) return;
+  uint16_t hostType = 0;
+  lockModbus();
+  bool ok = powerSupply->readRegister(REG_MASTER, hostType);
+  if (ok && hostType == 0x3B3A) {
+    IPAddress wifi = WiFi.localIP();
+    uint32_t ipv4 = ((uint32_t)wifi[0] << 24) | ((uint32_t)wifi[1] << 16) |
+                    ((uint32_t)wifi[2] << 8) | wifi[3];
+    uint16_t master = 0x3B3A;
+    bool w1 = powerSupply->writeRegisters(REG_MASTER, 1, &master);
+    uint16_t tail[3] = { 4, (uint16_t)((ipv4 >> 16) & 0xFFFF), (uint16_t)(ipv4 & 0xFFFF) };
+    bool w2 = powerSupply->writeRegisters(REG_WIFI_STATUS, 3, tail);
+    if (!w1 || !w2) {
+      LOG_ERROR("WiFi host keep-alive write failed");
+    }
+  }
+  unlockModbus();
 }
 
 // Function to specifically send operating mode details
@@ -863,6 +940,54 @@ void handleDeviceSettingAction(AsyncWebSocketClient* client, const String& actio
     unlockModbus();
     responseAction = "setBatteryCutoffResponse";
   }
+  else if (action == "setBch") {
+    bool enabled = doc["enabled"] | false;
+    float threshold = doc["threshold"] | 0.0f;
+    lockModbus();
+    success = powerSupply->setBatteryChargingEnable(enabled);
+    if (success && threshold > 0) success = powerSupply->setBatteryChargingThreshold(threshold);
+    unlockModbus();
+    responseAction = "setBchResponse";
+  }
+  else if (action == "setBtfEnable") {
+    bool enabled = doc["enabled"] | false;
+    lockModbus();
+    success = powerSupply->setBatteryCutoffEnable(enabled);
+    unlockModbus();
+    responseAction = "setBtfEnableResponse";
+  }
+  else if (action == "setBtfCutoff") {
+    // Writes the 0x002C BTF cutoff current (separate from legacy 0x001F BatFul)
+    float current = doc["current"] | 0.0f;
+    lockModbus();
+    success = powerSupply->setBatteryCutoffCurrentBtf(current);
+    unlockModbus();
+    responseAction = "setBtfCutoffResponse";
+  }
+  else if (action == "setClof") {
+    bool enabled = doc["enabled"] | false;
+    lockModbus();
+    success = powerSupply->setOutputOffOnGroupChange(enabled);
+    unlockModbus();
+    responseAction = "setClofResponse";
+  }
+  else if (action == "activateWifi") {
+    // Push the host block into 0x0030-0x0034 with the local WiFi IP
+    uint32_t ipv4 = 0;
+    IPAddress wifi = WiFi.localIP();
+    ipv4 = ((uint32_t)wifi[0] << 24) | ((uint32_t)wifi[1] << 16) |
+           ((uint32_t)wifi[2] << 8) | wifi[3];
+    lockModbus();
+    success = powerSupply->activateWifiModule(ipv4);
+    unlockModbus();
+    responseAction = "activateWifiResponse";
+    if (success) {
+      char wmsg[64];
+      snprintf(wmsg, sizeof(wmsg), "WiFi module activated, host IP %u.%u.%u.%u",
+               wifi[0], wifi[1], wifi[2], wifi[3]);
+      LOG_WS(WiFi.localIP(), WiFi.localIP(), wmsg);
+    }
+  }
   else if (action == "setPowerOnInit") {
     bool enabled = doc["enabled"] | false;
     lockModbus();
@@ -916,13 +1041,11 @@ void handleDeviceSettingAction(AsyncWebSocketClient* client, const String& actio
   }
   else if (action == "getMemoryGroup") {
     uint8_t group = doc["group"] | 0;
-    // Each group M0-M9 is 14 registers at 0050H + group*0010H (same layout as the working window)
-    uint16_t buf[14];
-    uint16_t etpReg = 0;
+    // Each group M0-M9 is 15 registers at 0050H + group*0010H (same layout as the working window)
+    uint16_t buf[15];
     bool ok = false;
     lockModbus();
-    ok = powerSupply->readRegisters(REG_CV_SET + ((uint16_t)group * 0x0010u), 14, buf);
-    if (ok) powerSupply->readRegister(REG_S_ETP, etpReg);
+    ok = powerSupply->readRegisters(REG_CV_SET + ((uint16_t)group * 0x0010u), 15, buf);
     unlockModbus();
     DynamicJsonDocument responseDoc(512);
     responseDoc["action"] = "memoryGroupData";
@@ -942,8 +1065,8 @@ void handleDeviceSettingAction(AsyncWebSocketClient* client, const String& actio
       uint32_t owh = (uint32_t)buf[10] | ((uint32_t)buf[11] << 16);
       responseDoc["overWattHours"] = owh * 0.01f;
       responseDoc["otp"] = buf[12] / 10.0f;
-      responseDoc["etp"] = etpReg / 10.0f;
       responseDoc["outputOnAtStartup"] = (buf[13] & 0x0001) != 0;
+      responseDoc["etp"] = buf[14] / 10.0f;
     }
     String response;
     serializeJson(responseDoc, response);
@@ -953,11 +1076,11 @@ void handleDeviceSettingAction(AsyncWebSocketClient* client, const String& actio
   }
   else if (action == "saveMemoryGroup") {
     uint8_t group = doc["group"] | 0;
-    uint16_t buf[14];
+    uint16_t buf[15];
     bool ok = false;
     lockModbus();
     // Read-modify-write so fields not sent by the client are preserved
-    ok = powerSupply->readRegisters(REG_CV_SET + ((uint16_t)group * 0x0010u), 14, buf);
+    ok = powerSupply->readRegisters(REG_CV_SET + ((uint16_t)group * 0x0010u), 15, buf);
     if (ok) {
       if (doc.containsKey("lvp")) buf[2] = (uint16_t)lroundf((doc["lvp"] | 0.0f) * 100.0f);
       if (doc.containsKey("ovp")) buf[3] = (uint16_t)lroundf((doc["ovp"] | 0.0f) * 100.0f);
@@ -978,11 +1101,8 @@ void handleDeviceSettingAction(AsyncWebSocketClient* client, const String& actio
       if (doc.containsKey("otp")) buf[12] = (uint16_t)lroundf((doc["otp"] | 0.0f) * 10.0f);
       if (doc.containsKey("outputOnAtStartup"))
         buf[13] = (buf[13] & 0xFFFE) | ((doc["outputOnAtStartup"] | false) ? 1 : 0);
-      ok = powerSupply->writeRegisters(REG_CV_SET + ((uint16_t)group * 0x0010u), 14, buf);
-      if (ok && doc.containsKey("etp")) {
-        uint16_t etpReg = (uint16_t)lroundf((doc["etp"] | 0.0f) * 10.0f);
-        ok = powerSupply->writeRegister(REG_S_ETP, etpReg);
-      }
+      if (doc.containsKey("etp")) buf[14] = (uint16_t)lroundf((doc["etp"] | 0.0f) * 10.0f);
+      ok = powerSupply->writeRegisters(REG_CV_SET + ((uint16_t)group * 0x0010u), 15, buf);
     }
     unlockModbus();
     responseAction = "saveMemoryGroupResponse";
@@ -1530,6 +1650,8 @@ void handleWebSocketMessage(AsyncWebSocket* server, AsyncWebSocketClient* client
     else if (action == "setProtection" || action == "setBacklight" || action == "setSleepTimeout" ||
              action == "setSlaveAddress" || action == "setBaudRate" || action == "setTempUnit" ||
              action == "setBeeper" || action == "setMppt" || action == "setBatteryCutoff" ||
+             action == "setBch" || action == "setBtfEnable" || action == "setBtfCutoff" ||
+             action == "setClof" || action == "activateWifi" ||
              action == "setPowerOnInit" || action == "setOhp" || action == "setOha" ||
              action == "setOwh" || action == "setMemoryGroup" || action == "psuReset" ||
              action == "clearProtection" || action == "setCpMode" || action == "getMemoryGroup" ||

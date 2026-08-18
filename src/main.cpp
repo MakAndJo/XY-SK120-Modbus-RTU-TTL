@@ -240,6 +240,13 @@ void loop() {
     pollAndBroadcastPSUStatus();
   }
 
+  // Keep the WiFi host registers on the PSU alive (ESPHome-style, ~1s)
+  static unsigned long lastWifiKeepAlive = 0;
+  if (millis() - lastWifiKeepAlive > 1000) {
+    lastWifiKeepAlive = millis();
+    wifiModuleKeepAlive();
+  }
+
   // Check for WiFi reset button press during operation
   static unsigned long lastButtonCheck = 0;
   if (millis() - lastButtonCheck > 1000) { // Check button every second
