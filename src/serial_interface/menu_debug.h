@@ -42,3 +42,10 @@ bool handleDebugWriteTrial(const String& input, XY_SKxxx* ps);
 
 // Write range command
 bool handleDebugWriteRange(const String& input, XY_SKxxx* ps);
+
+// Manual weather block (RTC/weather, 0x0200-0x0214) write command
+void handleDebugWeather(const String& input, XY_SKxxx* ps);
+
+// Auto-scan weather icon codes: every second bumps the icon +1 and shows the
+// code index in the "current temp" field, so you can film the PSU screensaver.
+void handleDebugWeatherScan(const String& input, XY_SKxxx* ps);

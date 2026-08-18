@@ -94,11 +94,33 @@
 #define REG_RTC_TIME_LO    0x0200  // Unix epoch seconds, low  16 bits (time & 0xFFFF)
 #define REG_RTC_TIME_HI    0x0201  // Unix epoch seconds, high 16 bits (time >> 16)
 #define REG_RTC_STATUS     0x0202  // Time/weather sync status, 0x0001=connecting, 0x0002=IP obtained, 0x0003=time synced
-#define REG_WX_TODAY_CODE  0x0203  // Today weather condition code (parser uses 0x3C/-C as error/unset)
+#define REG_WX_TODAY_CODE  0x0203  // Today weather condition code (see icon map below).
+                                   // Icon map (discovered by writing one code at a time):
+                                   //   0=луна           1=два облака         2=облако
+                                   //   3=два обл.+солнце 4=луна за облаком   5=солнце
+                                   //   6=солнце за 2 обл. 7=солнце за обл.   8=обл.4капли+луна
+                                   //   9=обл.4капли+солн. 10=обл.2кап.+гроза  11=обл.4кап.+гроза
+                                   //  12=пусто          13=обл.1точка        14=обл.3точки
+                                   //  15=обл.5точек     16=6 точек           17=обл.5точек
+                                   //  18=обл.7точек     19=обл.4лин.+3т.     20=обл.7палок
+                                   //  21=обл.5точек     22=обл.2т.+1палка    23=обл.3т.+1палка
+                                   //  24=обл.4т.+палка  25=обл.4т.+палка     26=5 палок
+                                   //  27=обл.луна+1т.   28=обл.луна+5т.      29=три капли
+                                   //  30=обл.1снеж.     31=обл.3снеж.        32=обл.5снеж.
+                                   //  33=обл.7снеж.     34=обл.3кап.+2снеж.  35=снеж./капля
+                                   //  36=луна обл.снеж. 37=3 снежинки        38=обл.снеж./снеж.
+                                   //  39=обл.снеж./2снеж. 40=обл.2снеж./2снеж. 41=обл.луна кап. снеж.
+                                   //  42=луна обл.снеж. 43=3 снежинки        44=круг 3 гориз.палки
+                                   //  45=3 гориз.палки  46=бесконечность     47=ураган
+                                   //  48=6т.+1 гориз.п. 49=ветер три         50=смерч
+                                   //  51=смерч          52=5 гориз.п.с прорез. 53=беск.+4т.
+                                   //  54=беск.+6т.      55=беск.+8т.         56=5 гориз.палок
+                                   //  57=5 гор.палок смещ. 58=градусник+     59=градусник-
+                                   //  60=N/A (0x3C error/unset)
 #define REG_WX_TODAY_TEMPH 0x0204  // Today high temperature (short, parser, °C)
 #define REG_WX_TODAY_TEMPL 0x0205  // Today low temperature (short, parser, °C)
-#define REG_WX_TODAY_FLAG  0x0206  // Today weather flag (parser writes from DAT_40202f38)
-#define REG_WX_TODAY_WCODE 0x0207  // Today wind condition code (windCode)
+#define REG_WX_TODAY_FLAG  0x0206  // Discovered: rendered as "NNc" next to high/low on screen -> current temp (°C)
+#define REG_WX_TODAY_WCODE 0x0207  // Discovered: rendered as "NN%" on screen -> humidity (%)
 #define REG_WX_TODAY_RES0  0x0208  // Today reserved (parser offset +0x10)
 #define REG_WX_TODAY_WLEVEL 0x0209 // Today wind level (windLevel)
 #define REG_WX_TODAY_WL_HI 0x020A  // Today wind level, high word

@@ -613,33 +613,6 @@ void wifiModuleKeepAlive() {
   unlockModbus();
 }
 
-// Sync the PSU RTC/weather block exactly like the OEM XY-WFPOW module does:
-// fn 0x10, addr 0x0200, 21 registers (0x2A bytes):
-//   reg0/reg1 = Unix epoch seconds split low/high 16-bit words
-//   reg2      = sync status (3 = time synced)
-//   reg3+     = weather (all zero until we implement a weather source)
-void syncRtcWeatherToPSU() {
-  if (!powerSupply) return;
-
-  time_t now = time(nullptr);
-  if (now < 1000000000) return; // NTP not synced yet, don't push garbage
-
-  // configTime() only sets the TZ env var - time() stays UTC. The PSU
-  // screensaver shows the raw epoch as wall clock, so push LOCAL time.
-  uint32_t t = (uint32_t)(now + gmtOffset_sec + daylightOffset_sec);
-  uint16_t regs[21] = {0};
-  regs[0] = t & 0xFFFF;          // low 16 bits
-  regs[1] = (t >> 16) & 0xFFFF;  // high 16 bits
-  regs[2] = 0x0003;              // status: time synced
-
-  lockModbus();
-  bool ok = powerSupply->writeRegisters(REG_RTC_TIME_LO, 21, regs);
-  if (!ok) {
-    LOG_ERROR("RTC/weather block write failed");
-  }
-  unlockModbus();
-}
-
 // Function to specifically send operating mode details
 void sendOperatingModeDetails(AsyncWebSocketClient* client) {
   if (!client || !powerSupply) {

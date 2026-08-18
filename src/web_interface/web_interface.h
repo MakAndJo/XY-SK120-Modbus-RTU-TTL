@@ -29,11 +29,6 @@ void wifiModuleKeepAlive();
 void lockModbus();
 void unlockModbus();
 
-// Push Unix time + (currently zeroed) weather into the PSU RTC/weather block
-// (0x0200-0x0214, 21 registers, fn 0x10) - mimics the Sinilink XY-WFPOW
-// module. Called periodically from loop().
-void syncRtcWeatherToPSU();
-
 // Force the next poll to broadcast even if the status is unchanged (new client)
 void forceStatusBroadcast();
 

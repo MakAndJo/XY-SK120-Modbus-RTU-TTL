@@ -5,6 +5,7 @@
 #include <LittleFS.h>  // Built-in ESP32 LittleFS
 #include "web_interface.h"
 #include "modbus_handler.h"
+#include "modbus/rtc_weather.h"
 #include "config_manager.h"
 #include "XY-SKxxx.h"
 #include "XY-SKxxx_Config.h"
@@ -188,6 +189,7 @@ void setup() {
   // After WiFi is connected, configure NTP for accurate timestamps
   if (WiFi.status() == WL_CONNECTED) {
     configureNTP();
+    startWeatherClient(); // background Open-Meteo refresh for the PSU weather block
   }
 
   // Try an alternative approach with server initialization

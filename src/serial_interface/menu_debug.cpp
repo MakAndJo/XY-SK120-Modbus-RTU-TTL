@@ -14,6 +14,9 @@ void displayDebugMenu() {
   Serial.println("wblock [start] [count] [v1 v2 ...] - Write contiguous block via FC16 (decimal)");
   Serial.println("wblockhex [start] [count] [v1 v2 ...] - Write contiguous block via FC16 (hex)");
   Serial.println("writetrial [register] [start] [end] [delay_ms] - Try writing range of values to register");
+  Serial.println("weather [code] [tHigh] [tLow] [tNow] [humidity] - Write today weather (RTC block)");
+  Serial.println("weather off - Stop auto weather sync (keep manual values)");
+  Serial.println("weatherscan [start] [end] - Auto-bump icon code every second, index shown as temp");
   Serial.println("raw [function] [register] [count] - Read raw register block");
   Serial.println("scan [start] [end] - Scan register range");
   Serial.println("sniff [seconds] - Listen on Modbus bus for PSU-initiated frames");
@@ -78,6 +81,18 @@ void handleDebugMenu(const String& input, XY_SKxxx* ps) {
   // Handle write range command
   if (input.startsWith("writerange ")) {
     handleDebugWriteRange(input, ps);
+    return;
+  }
+  
+  // Handle manual weather block write
+  if (input.startsWith("weatherscan")) {
+    handleDebugWeatherScan(input, ps);
+    return;
+  }
+  
+  // Handle manual weather block write
+  if (input.startsWith("weather")) {
+    handleDebugWeather(input, ps);
     return;
   }
   
