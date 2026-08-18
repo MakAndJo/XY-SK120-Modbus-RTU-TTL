@@ -79,9 +79,42 @@
 
 #define REG_S_INI          0x005D    // Power-on initialization setting, 2 bytes, 0 decimal places, unit: 0/1 (0: output off upon power on, 1: output on upon power on), Read and Write
 
-// Additional Modbus register addresses for XY-SK120 0x0100 - 0x0103, will not implement these as it's related to RTC (Real Time Clock) settings
+// ============================================================================
+// RTC / Weather block (0x0200 - 0x0214) - discovered by sniffing the Sinilink
+// XY-WFPOW WiFi module against an XY-SK150S. The module (acting as Modbus MASTER,
+// slave addr 0x01) writes this whole 21-register / 42-byte block with function
+// 0x10 (write multiple) roughly every 10 seconds:
+//
+//   01 10 02 00 00 15 2A <42 bytes> CRC
+//
+// The 42 bytes are byte-for-byte the weather struct (DAT_40202894) filled by the
+// module's JSON parser. NOTE: this is the REAL register address used by the WiFi
+// module - NOT 0x0100/0x0103 RTC or 0x0110/0x011D weather from the XY-SK120 docs.
+// ============================================================================
+#define REG_RTC_TIME_LO    0x0200  // Unix epoch seconds, low  16 bits (time & 0xFFFF)
+#define REG_RTC_TIME_HI    0x0201  // Unix epoch seconds, high 16 bits (time >> 16)
+#define REG_RTC_STATUS     0x0202  // Time/weather sync status, 0x0001=connecting, 0x0002=IP obtained, 0x0003=time synced
+#define REG_WX_TODAY_CODE  0x0203  // Today weather condition code (parser uses 0x3C/-C as error/unset)
+#define REG_WX_TODAY_TEMPH 0x0204  // Today high temperature (short, parser, °C)
+#define REG_WX_TODAY_TEMPL 0x0205  // Today low temperature (short, parser, °C)
+#define REG_WX_TODAY_FLAG  0x0206  // Today weather flag (parser writes from DAT_40202f38)
+#define REG_WX_TODAY_WCODE 0x0207  // Today wind condition code (windCode)
+#define REG_WX_TODAY_RES0  0x0208  // Today reserved (parser offset +0x10)
+#define REG_WX_TODAY_WLEVEL 0x0209 // Today wind level (windLevel)
+#define REG_WX_TODAY_WL_HI 0x020A  // Today wind level, high word
+#define REG_WX_TODAY_WL_LO 0x020B  // Today wind level, low word
+#define REG_WX_DAY1_CODE   0x020C  // Day 1 forecast weather code
+#define REG_WX_DAY1_TEMPH  0x020D  // Day 1 forecast high temp
+#define REG_WX_DAY1_TEMPL  0x020E  // Day 1 forecast low temp
+#define REG_WX_DAY2_CODE   0x020F  // Day 2 forecast weather code
+#define REG_WX_DAY2_TEMPH  0x0210  // Day 2 forecast high temp
+#define REG_WX_DAY2_TEMPL  0x0211  // Day 2 forecast low temp
+#define REG_WX_DAY3_CODE   0x0212  // Day 3 forecast weather code
+#define REG_WX_DAY3_TEMPH  0x0213  // Day 3 forecast high temp
+#define REG_WX_DAY3_TEMPL  0x0214  // Day 3 forecast low temp
 
-// Additional Modbus register addresses for XY-SK120 0x0110 - 0x011D, will not implement these as it's related to weather infomration???
+// Legacy note: XY-SK120 docs mention RTC at 0x0100-0x0103 and weather at
+// 0x0110-0x011D, but the real XY-WFPOW module writes these into 0x0200-0x0214.
 
 /* Below are undocumented registers, available in the XY-SK120 manual and OSD (On-Screen Display) 
 but not in the Modbus register map documentation
