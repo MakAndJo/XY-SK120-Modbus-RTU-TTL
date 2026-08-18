@@ -20,8 +20,19 @@ void sendOperatingModeDetails(AsyncWebSocketClient* client);
 void pollAndBroadcastPSUStatus();
 
 // ESPHome-style keep-alive of the WiFi host registers (0x0030-0x0034).
-// Re-writes the block every ~1s while a WiFi host (0x3B3A) is active.
+// Always claims the host as WiFi master (0x3B3A) and reports the actual
+// WiFi status (0=offline, 5=connected) + our local IP every ~1s.
 void wifiModuleKeepAlive();
+
+// Recursive Modbus-bus mutex (defined in web_interface.cpp). Exposed so
+// main.cpp background tasks can safely drive the PSU bus too.
+void lockModbus();
+void unlockModbus();
+
+// Push Unix time + (currently zeroed) weather into the PSU RTC/weather block
+// (0x0200-0x0214, 21 registers, fn 0x10) - mimics the Sinilink XY-WFPOW
+// module. Called periodically from loop().
+void syncRtcWeatherToPSU();
 
 // Force the next poll to broadcast even if the status is unchanged (new client)
 void forceStatusBroadcast();

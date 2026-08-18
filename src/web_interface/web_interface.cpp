@@ -585,27 +585,57 @@ void pollAndBroadcastPSUStatus() {
   ws.textAll(response);
 }
 
-// Keep the WiFi host alive: the PSU drops the module's address and blinks in
-// pairing mode if the host block goes stale, so re-write MASTER + WIFI-STATUS +
-// IP every second. Never touch WIFI-CONFIG (0x0031) - that lets the PSU's own
-// conf NONE/AP/TOUCH setting be applied and kept by the user.
-// WIFI-STATUS=4 is the empirically stable "online" state (2 makes it blink).
+// Claim the PSU host block as the WiFi master and keep it alive. The PSU drops
+// the module's address and blinks in pairing mode if the host block goes stale,
+// so we always write MASTER(0x3B3A) + WIFI-STATUS + IP every second.
+// WIFI-STATUS=5 is the "connected to server" state the OEM XY-WFPOW module
+// writes (seen live on the bus); status=0 while WiFi is down. Never touch
+// WIFI-CONFIG (0x0031) - that lets the PSU's own conf NONE/AP/TOUCH setting be
+// applied and kept by the user.
 void wifiModuleKeepAlive() {
   if (!powerSupply) return;
-  uint16_t hostType = 0;
+  IPAddress wifi = WiFi.localIP();
+  uint32_t ipv4 = ((uint32_t)wifi[0] << 24) | ((uint32_t)wifi[1] << 16) |
+                  ((uint32_t)wifi[2] << 8) | wifi[3];
+  bool connected = (WiFi.status() == WL_CONNECTED);
+  if (!connected) ipv4 = 0;
+
+  uint16_t master = 0x3B3A;
+  uint16_t tail[3] = { connected ? 0x0005 : 0x0000,
+                       (uint16_t)((ipv4 >> 16) & 0xFFFF),
+                       (uint16_t)(ipv4 & 0xFFFF) };
   lockModbus();
-  bool ok = powerSupply->readRegister(REG_MASTER, hostType);
-  if (ok && hostType == 0x3B3A) {
-    IPAddress wifi = WiFi.localIP();
-    uint32_t ipv4 = ((uint32_t)wifi[0] << 24) | ((uint32_t)wifi[1] << 16) |
-                    ((uint32_t)wifi[2] << 8) | wifi[3];
-    uint16_t master = 0x3B3A;
-    bool w1 = powerSupply->writeRegisters(REG_MASTER, 1, &master);
-    uint16_t tail[3] = { 4, (uint16_t)((ipv4 >> 16) & 0xFFFF), (uint16_t)(ipv4 & 0xFFFF) };
-    bool w2 = powerSupply->writeRegisters(REG_WIFI_STATUS, 3, tail);
-    if (!w1 || !w2) {
-      LOG_ERROR("WiFi host keep-alive write failed");
-    }
+  bool w1 = powerSupply->writeRegister(REG_MASTER, master);
+  bool w2 = powerSupply->writeRegisters(REG_WIFI_STATUS, 3, tail);
+  if (!w1 || !w2) {
+    LOG_ERROR("WiFi host keep-alive write failed");
+  }
+  unlockModbus();
+}
+
+// Sync the PSU RTC/weather block exactly like the OEM XY-WFPOW module does:
+// fn 0x10, addr 0x0200, 21 registers (0x2A bytes):
+//   reg0/reg1 = Unix epoch seconds split low/high 16-bit words
+//   reg2      = sync status (3 = time synced)
+//   reg3+     = weather (all zero until we implement a weather source)
+void syncRtcWeatherToPSU() {
+  if (!powerSupply) return;
+
+  time_t now = time(nullptr);
+  if (now < 1000000000) return; // NTP not synced yet, don't push garbage
+
+  // configTime() only sets the TZ env var - time() stays UTC. The PSU
+  // screensaver shows the raw epoch as wall clock, so push LOCAL time.
+  uint32_t t = (uint32_t)(now + gmtOffset_sec + daylightOffset_sec);
+  uint16_t regs[21] = {0};
+  regs[0] = t & 0xFFFF;          // low 16 bits
+  regs[1] = (t >> 16) & 0xFFFF;  // high 16 bits
+  regs[2] = 0x0003;              // status: time synced
+
+  lockModbus();
+  bool ok = powerSupply->writeRegisters(REG_RTC_TIME_LO, 21, regs);
+  if (!ok) {
+    LOG_ERROR("RTC/weather block write failed");
   }
   unlockModbus();
 }
@@ -970,23 +1000,6 @@ void handleDeviceSettingAction(AsyncWebSocketClient* client, const String& actio
     success = powerSupply->setOutputOffOnGroupChange(enabled);
     unlockModbus();
     responseAction = "setClofResponse";
-  }
-  else if (action == "activateWifi") {
-    // Push the host block into 0x0030-0x0034 with the local WiFi IP
-    uint32_t ipv4 = 0;
-    IPAddress wifi = WiFi.localIP();
-    ipv4 = ((uint32_t)wifi[0] << 24) | ((uint32_t)wifi[1] << 16) |
-           ((uint32_t)wifi[2] << 8) | wifi[3];
-    lockModbus();
-    success = powerSupply->activateWifiModule(ipv4);
-    unlockModbus();
-    responseAction = "activateWifiResponse";
-    if (success) {
-      char wmsg[64];
-      snprintf(wmsg, sizeof(wmsg), "WiFi module activated, host IP %u.%u.%u.%u",
-               wifi[0], wifi[1], wifi[2], wifi[3]);
-      LOG_WS(WiFi.localIP(), WiFi.localIP(), wmsg);
-    }
   }
   else if (action == "setPowerOnInit") {
     bool enabled = doc["enabled"] | false;
@@ -1651,7 +1664,6 @@ void handleWebSocketMessage(AsyncWebSocket* server, AsyncWebSocketClient* client
              action == "setSlaveAddress" || action == "setBaudRate" || action == "setTempUnit" ||
              action == "setBeeper" || action == "setMppt" || action == "setBatteryCutoff" ||
              action == "setBch" || action == "setBtfEnable" || action == "setBtfCutoff" ||
-             action == "setClof" || action == "activateWifi" ||
              action == "setPowerOnInit" || action == "setOhp" || action == "setOha" ||
              action == "setOwh" || action == "setMemoryGroup" || action == "psuReset" ||
              action == "clearProtection" || action == "setCpMode" || action == "getMemoryGroup" ||

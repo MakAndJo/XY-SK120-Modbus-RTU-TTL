@@ -156,7 +156,7 @@ but not in the Modbus register map documentation
 // {0x3B3A, 2, 4, ip_hi, ip_lo} to 0x0030-0x0034 activates the WiFi host.
 #define REG_MASTER     0x0030  // Host type, 0x3B3A = WiFi host, Read and Write
 #define REG_WIFI_CONFIG 0x0031 // WiFi configuration status, 0=Invalid, 1=Pairing, 2=Valid, Read and Write
-#define REG_WIFI_STATUS 0x0032 // WiFi status, 0=Invalid, 1=Router, 2=Server, 3=Touch, 4=Connected, Read and Write
+#define REG_WIFI_STATUS 0x0032 // WiFi status, 0=Invalid, 1=Router, 2=Server, 3=Touch, 4=AP/Connected, 5=Online, Read and Write
 #define REG_IPV4_H      0x0033  // IP address high word (octet1<<8 | octet2), Read and Write
 #define REG_IPV4_L      0x0034  // IP address low word (octet3<<8 | octet4), Read and Write
 

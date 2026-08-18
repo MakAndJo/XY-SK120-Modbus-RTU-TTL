@@ -251,6 +251,14 @@ void loop() {
     wifiModuleKeepAlive();
   }
 
+  // Sync the PSU RTC/weather block (Unix time + zeroed weather, ~10s like the
+  // OEM XY-WFPOW module does). Runs only after NTP has provided valid time.
+  static unsigned long lastRtcSync = 0;
+  if (millis() - lastRtcSync > 10000) {
+    lastRtcSync = millis();
+    syncRtcWeatherToPSU();
+  }
+
   // Check for WiFi reset button press during operation
   static unsigned long lastButtonCheck = 0;
   if (millis() - lastButtonCheck > 1000) { // Check button every second

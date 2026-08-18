@@ -19,6 +19,7 @@ function formatWifiStatus(v) {
   if (v === 2) return "2 — подключено к серверу";
   if (v === 3) return "3 — Touch pairing";
   if (v === 4) return "4 — AP pairing";
+  if (v === 5) return "5 — онлайн (сервер)";
   return String(v);
 }
 function formatIpv4(v) {
@@ -191,9 +192,28 @@ function send(obj) {
 }
 
 // ---- Rendering ----
+function loadTimeZones() {
+  const sel = $("cTz");
+  if (!sel) return;
+  fetch("/api/timezone")
+    .then((r) => r.json())
+    .then((d) => {
+      sel.innerHTML = "";
+      (d.timeZones || []).forEach((tz) => {
+        const opt = document.createElement("option");
+        opt.value = String(tz.index);
+        opt.textContent = tz.label;
+        sel.appendChild(opt);
+      });
+      const cur = d.current && d.current.index >= 0 ? String(d.current.index) : "";
+      sel.value = cur;
+      lastTzIndex = Number(sel.value);
+    })
+    .catch(() => {});
+}
+
 function setConn(offline) {
   const dot = $("conn");
-  dot.className = offline ? "dot dot-off" : "dot dot-on";
   $("connText").textContent = offline ? "offline" : "online";
 }
 
@@ -256,6 +276,7 @@ function loadAllMemGroups() {
 let configDirty = false;
 // Last server values of the settings inputs, used to send only what really changed
 let lastConfig = {};
+let lastTzIndex = 0;
 
 function configInputsDirty() {
   configDirty = true;
@@ -671,6 +692,10 @@ function saveConfig() {
   if ($("cBtfEn").checked !== c.btfEn) req.push({ action: "setBtfEnable", enabled: $("cBtfEn").checked });
   if ($("cBtfCut").value !== c.btfCut) req.push({ action: "setBtfCutoff", current: parseFloat($("cBtfCut").value) });
   if ($("cClof").checked !== c.clof) req.push({ action: "setClof", enabled: $("cClof").checked });
+  if ($("cTz") && Number($("cTz").value) !== lastTzIndex) {
+    req.push({ action: "setTimeZone", index: parseInt($("cTz").value) });
+    lastTzIndex = Number($("cTz").value);
+  }
 
   if (!req.length) { toast("Нет изменений"); return; }
   req.forEach(send);
@@ -688,12 +713,12 @@ document.addEventListener("DOMContentLoaded", () => {
   loadServers();
   renderDeviceSelect();
   initTab();
+  loadTimeZones();
 
   $("outBtn").addEventListener("click", toggleOutput);
   $("keyLock").addEventListener("click", toggleKeyLock);
   $("wifiAddBtn").addEventListener("click", addNetwork);
   $("wifiRefresh").addEventListener("click", loadWifiStatus);
-  $("wifiModActivate").addEventListener("click", () => send({ action: "activateWifi" }));
   $("psuResetBtn").addEventListener("click", () => {
     if (confirm("Сбросить БП к заводским настройкам?")) send({ action: "psuReset" });
   });
@@ -702,7 +727,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // Settings form: mark dirty on any edit, Save/Cancel like the protection card
-  ["cBacklight", "cSleep", "cSlave", "cBaud", "cTempUnit", "cBeeper", "cMppt", "cMpptThr", "cCpMode", "cBtf", "cBch", "cBchThr", "cBtfEn", "cBtfCut", "cClof"].forEach((id) => {
+  ["cBacklight", "cSleep", "cSlave", "cBaud", "cTempUnit", "cBeeper", "cMppt", "cMpptThr", "cCpMode", "cBtf", "cBch", "cBchThr", "cBtfEn", "cBtfCut", "cClof", "cTz"].forEach((id) => {
     const el = $(id);
     if (!el) return;
     el.addEventListener(el.dataset.markOnly ? "click" : "change", configInputsDirty);

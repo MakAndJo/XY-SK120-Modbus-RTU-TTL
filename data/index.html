@@ -148,6 +148,7 @@
           <tr><td>BCH заряд АКБ</td><td class="ctrl"><input id="cBch" type="checkbox"><input id="cBchThr" type="number" step="0.01" min="0" placeholder="порог V" style="width:80px"></td></tr>
           <tr><td>BTF откл. (0x2C)</td><td class="ctrl"><input id="cBtfEn" type="checkbox"><input id="cBtfCut" type="number" step="0.001" min="0" placeholder="ток A" style="width:80px"></td></tr>
           <tr><td>CLOF откл. выхода</td><td class="ctrl"><input id="cClof" type="checkbox"></td></tr>
+          <tr><td>Часовой пояс</td><td class="ctrl"><select id="cTz"></select></td></tr>
         </table>
         <div class="row">
           <button id="cfgCancelBtn" class="btn btn-ghost">Отменить</button>
@@ -159,7 +160,7 @@
       </section>
 
       <section class="card" id="modwifiCard">
-        <h2>WiFi-модуль БП <button id="wifiModActivate" class="btn btn-sm btn-primary">активировать</button></h2>
+        <h2>WiFi-модуль БП</h2>
         <table class="editable row">
           <tr><td>Хост</td><td id="hostType">--</td></tr>
           <tr><td>Конфигурация</td><td id="wifiConfig">--</td></tr>
