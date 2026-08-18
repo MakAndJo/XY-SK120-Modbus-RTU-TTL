@@ -134,6 +134,21 @@ bool XY_SKxxx::readRegister(uint16_t addr, uint16_t& value) {
   return success;
 }
 
+// Read input registers (Modbus function code 0x04)
+bool XY_SKxxx::readInputRegisters(uint16_t addr, uint16_t count, uint16_t* buffer) {
+  waitForSilentInterval();
+  uint8_t result = modbus.readInputRegisters(addr, count);
+  if (result == modbus.ku8MBSuccess) {
+    for (uint16_t i = 0; i < count; i++) {
+      buffer[i] = modbus.getResponseBuffer(i);
+    }
+    _lastCommsTime = millis();
+    return true;
+  }
+  _lastCommsTime = millis();
+  return false;
+}
+
 // Add memory group methods implementation
 bool XY_SKxxx::readMemoryGroup(xy_sk::MemoryGroup group, uint16_t* data, bool force) {
     // Try to get from cache first unless forced refresh is requested

@@ -10,6 +10,7 @@
 #include "XY-SKxxx_Config.h"
 #include "serial_monitor_interface.h"
 #include "serial_interface/serial_core.h"
+#include "serial_interface/menu_debug.h" // For background bus sniffing (sniffTick)
 #include "wifi_interface/wifi_manager_wrapper.h" // Include wrapper instead of WiFiManager directly
 #include "web_interface/log_utils.h" // Use the web_interface version of the logging utilities
 
@@ -225,6 +226,9 @@ void loop() {
 
   // Process serial monitor commands
   checkSerialMonitorInput(powerSupply, xyConfig);
+
+  // Background bus sniffing (non-blocking, keeps keep-alive running)
+  sniffTick(powerSupply);
 
   // You can process other interfaces here in the future:
   // processWebSocketMessages();

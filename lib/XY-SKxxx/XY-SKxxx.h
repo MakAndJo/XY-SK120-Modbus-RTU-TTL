@@ -396,6 +396,10 @@ public:
   bool debugWriteRegister(uint16_t addr, uint16_t value);
   bool debugWriteRegisters(uint16_t addr, uint8_t count, const uint16_t* values);
 
+  // Read input registers (Modbus function code 0x04). Used to probe for
+  // RTC/weather areas (0x0100+) which may live in the input-register space.
+  bool readInputRegisters(uint16_t addr, uint16_t count, uint16_t* buffer);
+
   // Memory Group Methods
   
   /**

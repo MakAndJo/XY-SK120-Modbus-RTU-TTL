@@ -17,6 +17,10 @@ void handleDebugReadWrite(const String& input, XY_SKxxx* ps) {
   else if (input.startsWith("mwrite ") || input.startsWith("mwritehex ")) {
     handleDebugMultiWrite(input, ps);
   }
+  // Block write command (single FC16/0x10 request)
+  else if (input.startsWith("wblockhex ") || input.startsWith("wblock ")) {
+    handleDebugBlockWrite(input, ps);
+  }
   // Raw read command
   else if (input.startsWith("raw ")) {
     handleDebugRaw(input, ps);
@@ -65,6 +69,52 @@ bool handleDebugRead(const String& input, XY_SKxxx* ps) {
     return true;
   } else {
     Serial.println("Failed to read register");
+    return false;
+  }
+}
+
+bool handleDebugReadInput(const String& input, XY_SKxxx* ps) {
+  bool isHex = input.startsWith("read4hex ");
+  int cmdLen = isHex ? 9 : 6;
+  uint16_t reg;
+  
+  if (isHex) {
+    if (!parseHex(input.substring(cmdLen), reg)) {
+      Serial.println("Invalid hex register address");
+      return false;
+    }
+  } else {
+    if (!parseUInt16(input.substring(cmdLen), reg)) {
+      Serial.println("Invalid register address");
+      return false;
+    }
+  }
+  
+  uint16_t value;
+  if (ps->readInputRegisters(reg, 1, &value)) {
+    if (isHex) {
+      Serial.print("Input register 0x");
+      Serial.print(reg, HEX);
+      Serial.print(" (");
+      Serial.print(reg);
+      Serial.print("): 0x");
+      Serial.print(value, HEX);
+    } else {
+      Serial.print("Input register ");
+      Serial.print(reg);
+      Serial.print(" (0x");
+      Serial.print(reg, HEX);
+      Serial.print("): ");
+      Serial.print(value);
+      Serial.print(" (0x");
+      Serial.print(value, HEX);
+    }
+    Serial.print(" (");
+    Serial.print(value);
+    Serial.println(")");
+    return true;
+  } else {
+    Serial.println("Failed to read input register");
     return false;
   }
 }
@@ -224,6 +274,84 @@ bool handleDebugMultiWrite(const String& input, XY_SKxxx* ps) {
   return allSuccess;
 }
 
+bool handleDebugBlockWrite(const String& input, XY_SKxxx* ps) {
+  bool isHex = input.startsWith("wblockhex ");
+  String args = input.substring(isHex ? 10 : 7);
+  args.trim();
+  
+  int space1 = args.indexOf(' ');
+  int space2 = args.indexOf(' ', space1 + 1);
+  if (space1 <= 0 || space2 <= 0) {
+    Serial.println("Invalid format. Use: wblockhex [start] [count] [v1 v2 ...]");
+    return false;
+  }
+  
+  uint16_t startAddr, count;
+  if (isHex) {
+    if (!parseHex(args.substring(0, space1), startAddr) ||
+        !parseHex(args.substring(space1 + 1, space2), count)) {
+      Serial.println("Invalid hex start address or count");
+      return false;
+    }
+  } else {
+    if (!parseUInt16(args.substring(0, space1), startAddr) ||
+        !parseUInt16(args.substring(space1 + 1, space2), count)) {
+      Serial.println("Invalid start address or count");
+      return false;
+    }
+  }
+  
+  if (count < 1 || count > 50) {
+    Serial.println("Count must be between 1 and 50");
+    return false;
+  }
+  
+  String vals = args.substring(space2 + 1);
+  vals.trim();
+  
+  uint16_t values[50];
+  int n = 0;
+  while (vals.length() > 0 && n < count) {
+    int sp = vals.indexOf(' ');
+    String token = sp > 0 ? vals.substring(0, sp) : vals;
+    if (sp > 0) vals = vals.substring(sp + 1); else vals = "";
+    token.trim();
+    if (token.length() == 0) continue;
+    if (isHex) {
+      if (!parseHex(token, values[n])) {
+        Serial.println("Invalid hex value: " + token);
+        return false;
+      }
+    } else {
+      if (!parseUInt16(token, values[n])) {
+        Serial.println("Invalid value: " + token);
+        return false;
+      }
+    }
+    n++;
+  }
+  
+  if (n != count) {
+    Serial.print("Expected ");
+    Serial.print(count);
+    Serial.print(" values, got ");
+    Serial.println(n);
+    return false;
+  }
+  
+  if (ps->writeRegisters(startAddr, count, values)) {
+    Serial.print("Block write OK: 0x");
+    Serial.print(startAddr, HEX);
+    Serial.print(" count ");
+    Serial.print(count);
+    Serial.println(" (single FC16/0x10 request)");
+    return true;
+  } else {
+    Serial.println("Block write FAILED");
+    return false;
+  }
+}
+
 bool handleDebugRaw(const String& input, XY_SKxxx* ps) {
   int space1 = input.indexOf(' ', 4);
   int space2 = input.indexOf(' ', space1 + 1);
@@ -251,7 +379,20 @@ bool handleDebugRaw(const String& input, XY_SKxxx* ps) {
   
   uint16_t* results = new uint16_t[count];
   
-  if (ps->readRegisters(reg, count, results)) {
+  bool ok = false;
+  if (function == 0x04) {
+    ok = ps->readInputRegisters(reg, count, results);
+    Serial.println("Using function code 0x04 (input registers)");
+  } else if (function == 0x03) {
+    ok = ps->readRegisters(reg, count, results);
+    Serial.println("Using function code 0x03 (holding registers)");
+  } else {
+    Serial.println("Unsupported function code. Only 0x03 and 0x04 are supported.");
+    delete[] results;
+    return false;
+  }
+  
+  if (ok) {
     Serial.print("Read registers starting at: ");
     Serial.print(reg);
     Serial.print(", count: ");
