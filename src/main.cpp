@@ -27,6 +27,18 @@ XYModbusConfig xyConfig;
 // Create XY_SKxxx instance with default pins (will be updated from config)
 XY_SKxxx* powerSupply = nullptr;
 
+// WiFi host keepalive task: claims the PSU's master/status registers from the
+// very first second of boot (even while WiFi is still connecting), so the PSU
+// screen recognises the WiFi module immediately. The status is written as
+// "not connected" (0) until WiFi is up.
+void wifiHostKeepAliveTask(void* param) {
+  (void)param;
+  while (true) {
+    wifiModuleKeepAlive();
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
+  }
+}
+
 AsyncWebServer server(80);
 ModbusMaster modbus;
 
@@ -84,6 +96,40 @@ void setup() {
     LOG_INFO("LittleFS initialized successfully");
   }
 
+  // Initialize the configuration manager
+  if (!XYConfigManager::begin()) {
+    Serial.println("Failed to initialize configuration manager");
+  }
+
+  // Load configuration from NVS
+  xyConfig = XYConfigManager::loadConfig();
+
+  // Display the loaded configuration
+  displayConfig(xyConfig);
+
+  // Create the power supply instance with the loaded configuration
+  powerSupply = new XY_SKxxx(xyConfig.rxPin, xyConfig.txPin, xyConfig.slaveId);
+
+  // Initialize Modbus RTU (attaches the global ModbusMaster to Serial1; the
+  // real baud/pins are applied by powerSupply->begin() below)
+  setupModbus();
+
+  // Initialize the power supply (independent of WiFi)
+  powerSupply->begin(xyConfig.baudRate);
+  delay(500); // Give the device time to initialize
+
+  // Test connection
+  Serial.println("Testing connection to power supply...");
+  if (powerSupply->testConnection()) {
+    Serial.println("Connection successful!");
+  } else {
+    Serial.println("Connection failed. Please check wiring and settings.");
+  }
+
+  // Start claiming the PSU master/status registers from the very first second,
+  // before/while WiFi connects. Status stays "not connected" until WiFi is up.
+  xTaskCreatePinnedToCore(wifiHostKeepAliveTask, "wifiHost", 4096, NULL, 1, NULL, 1);
+
   // For initial setup, force the AP mode to appear temporarily
   // by forcing WiFi reset once (comment out after first use)
   // resetWiFiSettings();  // <-- COMMENTED OUT after successful connectionuse
@@ -117,10 +163,6 @@ void setup() {
     delay(1000);
   }
 
-  // Initialize the Modbus communication
-  setupModbus();
-
-  // Set up TCP/IP networking properly before starting server
   // This sequence helps resolve binding issues
   IPAddress localIP = WiFi.localIP();
   IPAddress subnet = WiFi.subnetMask();
@@ -174,49 +216,12 @@ void setup() {
   }
 
   Serial.println("\n\n----- XY-SK150 Modbus RTU Control System -----");
+  displayDeviceStatus(powerSupply);
 
-  // Initialize the configuration manager
-  if (!XYConfigManager::begin()) {
-    Serial.println("Failed to initialize configuration manager");
-  }
-
-  // Load configuration from NVS
-  xyConfig = XYConfigManager::loadConfig();
-
-  // Display the loaded configuration
-  displayConfig(xyConfig);
-
-  // Create the power supply instance with the loaded configuration
-  powerSupply = new XY_SKxxx(xyConfig.rxPin, xyConfig.txPin, xyConfig.slaveId);
-
-  // Initialize the power supply
-  powerSupply->begin(xyConfig.baudRate);
-  delay(500); // Give the device time to initialize
-
-  // Test connection
-  Serial.println("Testing connection to power supply...");
-  if (powerSupply->testConnection()) {
-    Serial.println("Connection successful!");
-
-    // Read and display device information
-    uint16_t model = powerSupply->getModel();
-    uint16_t version = powerSupply->getVersion();
-
-    Serial.println("\nDevice Information:");
-    Serial.print("Model:   "); Serial.println(model);
-    Serial.print("Version: "); Serial.println(version);
-
-    // Display initial status
-    displayDeviceStatus(powerSupply);
-
-    // Initialize serial monitor interface - MOVED ALL RELATED CODE TO HERE
-    Serial.println("\nInitializing serial monitor interface...");
-    setupSerialMonitorControl();
-    Serial.println("Enter commands to control the power supply.");
-  } else {
-    Serial.println("Connection failed. Please check wiring and settings.");
-  }
-
+  // Initialize serial monitor interface
+  Serial.println("\nInitializing serial monitor interface...");
+  setupSerialMonitorControl();
+  Serial.println("Enter commands to control the power supply.");
   initializeSerialInterface();
 }
 
@@ -244,12 +249,8 @@ void loop() {
     pollAndBroadcastPSUStatus();
   }
 
-  // Keep the WiFi host registers on the PSU alive (ESPHome-style, ~1s)
-  static unsigned long lastWifiKeepAlive = 0;
-  if (millis() - lastWifiKeepAlive > 1000) {
-    lastWifiKeepAlive = millis();
-    wifiModuleKeepAlive();
-  }
+  // Keep the WiFi host registers on the PSU alive - handled by the background
+  // wifiHostKeepAliveTask, no longer needed in loop().
 
   // Sync the PSU RTC/weather block (Unix time + zeroed weather, ~10s like the
   // OEM XY-WFPOW module does). Runs only after NTP has provided valid time.
