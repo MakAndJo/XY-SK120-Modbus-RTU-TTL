@@ -4,16 +4,12 @@
   "description": "Power Supply Control Interface",
   "main": "index.js",
   "scripts": {
-    "build:css": "tailwindcss -i ./data/css/input.css -o ./data/css/tailwind.css",
-    "watch:css": "tailwindcss -i ./data/css/input.css -o ./data/css/tailwind.css --watch",
-    "prod:css": "tailwindcss -i ./data/css/input.css -o ./data/css/tailwind.css --minify",
     "copy-libs": "node scripts/copy-libs.js",
     "postinstall": "npm run copy-libs"
   },
   "devDependencies": {
     "autoprefixer": "^10.4.21",
-    "postcss": "^8.5.3",
-    "tailwindcss": "^3.4.17"
+    "postcss": "^8.5.3"
   },
   "dependencies": {
     "animejs": "^3.2.2"
