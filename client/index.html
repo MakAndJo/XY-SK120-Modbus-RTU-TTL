@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>XY-SK150 Control</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>XY-SK150</h1>
+  <div id="conn"><span class="dot"></span><span id="connText">offline</span></div>
+</header>
+
+<main>
+  <!-- Bind / device select -->
+  <section id="bindSection" class="card">
+    <h2>Device</h2>
+    <div id="deviceInfo" class="hidden">
+      <div>ID: <code id="devId"></code></div>
+      <div>Name: <span id="devName"></span> (<span id="devModel"></span>)</div>
+      <div>Online: <span id="devOnline">?</span></div>
+    </div>
+    <form id="bindForm" class="hidden">
+      <label>Bind key (from device setup screen)</label>
+      <input id="bindKey" placeholder="e.g. a1b2c3d4e5f6..." autocomplete="off">
+      <button type="submit">Bind device</button>
+      <div id="bindErr" class="err hidden"></div>
+    </form>
+    <button id="bindBtn" class="ghost">Bind another device</button>
+  </section>
+
+  <!-- Live readings -->
+  <section id="statusSection" class="card hidden">
+    <h2>Output</h2>
+    <div class="readings">
+      <div class="reading"><label>Voltage</label><span id="voltage">--</span><span class="unit">V</span></div>
+      <div class="reading"><label>Current</label><span id="current">--</span><span class="unit">A</span></div>
+      <div class="reading"><label>Power</label><span id="power">--</span><span class="unit">W</span></div>
+    </div>
+    <div class="row">
+      <button id="outputBtn" class="primary">Output OFF</button>
+      <button id="modeBtn">Mode: --</button>
+    </div>
+    <div class="row">
+      <label>Set voltage <input id="setVoltage" type="number" step="0.01" min="0" max="60" value="0"></label>
+      <label>Set current <input id="setCurrent" type="number" step="0.001" min="0" max="6" value="0"></label>
+      <button id="setBtn">Apply V/A</button>
+    </div>
+    <div class="row">
+      <label>Set power (W) <input id="setPower" type="number" step="0.1" min="0" max="600" value="0"></label>
+      <button id="setPowerBtn">Apply W</button>
+    </div>
+  </section>
+
+  <!-- Metering / protections / misc -->
+  <section id="miscSection" class="card hidden">
+    <div class="grid">
+      <div class="stat"><label>Ah</label><span id="ampHours">--</span></div>
+      <div class="stat"><label>Wh</label><span id="wattHours">--</span></div>
+      <div class="stat"><label>Runtime</label><span id="outputTime">--</span></div>
+      <div class="stat"><label>Temp</label><span id="temp">--</span></div>
+      <div class="stat"><label>Input V</label><span id="inputVoltage">--</span></div>
+    </div>
+    <h3>Protections</h3>
+    <div class="protgrid">
+      <label>OVP <input id="ovp" type="number" step="0.1"></label>
+      <label>OCP <input id="ocp" type="number" step="0.01"></label>
+      <label>OPP <input id="opp" type="number" step="0.1"></label>
+      <label>OTP <input id="otp" type="number" step="1"></label>
+      <label>LVP <input id="lvp" type="number" step="0.1"></label>
+      <button id="setProtBtn">Set protections</button>
+    </div>
+    <div class="row">
+      <button id="keyLockBtn">Key lock: OFF</button>
+      <button id="beepBtn">Beeper: --</button>
+      <button id="psuResetBtn">PSU reset</button>
+    </div>
+  </section>
+
+  <!-- Memory groups -->
+  <section id="memSection" class="card hidden">
+    <h3>Memory group</h3>
+    <div class="row">
+      <label>Group <input id="memGroup" type="number" min="1" max="10" value="1"></label>
+      <button id="memLoadBtn">Load</button>
+      <button id="memSaveBtn">Save</button>
+    </div>
+  </section>
+</main>
+
+<footer><a href="#" id="resetLocal">Forget device</a></footer>
+
+<script src="app.js"></script>
+</body>
+</html>
