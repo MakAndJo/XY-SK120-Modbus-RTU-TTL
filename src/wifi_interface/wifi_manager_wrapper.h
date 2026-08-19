@@ -2,7 +2,6 @@
 #define WIFI_MANAGER_WRAPPER_H
 
 #include <Arduino.h>
-#include <String>
 
 // Include wifi_settings.h first to get the shared constants
 #include "wifi_settings.h"
