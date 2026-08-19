@@ -430,6 +430,7 @@ static bool psuConnected() {
 static String handleDeviceSetting(String action, DynamicJsonDocument& doc) {
   bool success = false;
   String responseAction;
+  uint8_t savedGroup = 255;
 
   if (action == "setProtection") {
     String key = doc["key"].as<String>();
@@ -654,6 +655,7 @@ static String handleDeviceSetting(String action, DynamicJsonDocument& doc) {
     unlockModbus();
     success = ok;
     responseAction = "saveMemoryGroupResponse";
+    savedGroup = group;
   }
   else if (action == "psuReset") {
     lockModbus();
@@ -674,6 +676,7 @@ static String handleDeviceSetting(String action, DynamicJsonDocument& doc) {
   DynamicJsonDocument responseDoc(128);
   responseDoc["action"] = responseAction;
   responseDoc["success"] = success;
+  if (savedGroup != 255) responseDoc["group"] = savedGroup;
   String response;
   serializeJson(responseDoc, response);
   return response;

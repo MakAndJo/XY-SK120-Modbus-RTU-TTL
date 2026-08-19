@@ -688,7 +688,10 @@ function handleMessage(raw) {
       break;
     case "saveMemoryGroupResponse":
       toast(msg.success ? `Профиль M${msg.group} сохранён` : "Ошибка сохранения профиля");
-      if (msg.success) send({ action: "getMemoryGroup", group: msg.group }); // refresh the selector label
+      if (msg.success) {
+        const g = msg.group != null ? msg.group : viewingGroup;
+        if (g != null) send({ action: "getMemoryGroup", group: g }); // refresh the selector label
+      }
       break;
   }
   // Toast failures from device-setting responses
