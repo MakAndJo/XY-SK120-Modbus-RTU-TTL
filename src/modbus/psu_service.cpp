@@ -415,6 +415,17 @@ static String fmtError(const String& action) {
   return "{\"action\":\"" + action + "\",\"success\":false,\"error\":\"Power supply not connected\"}";
 }
 
+// Connection probe must run under the bus lock: it does a full Modbus frame
+// round-trip and would otherwise corrupt the shared ModbusMaster buffers when
+// the keep-alive task (core 1, prio 3) writes between test and response.
+static bool psuConnected() {
+  if (!powerSupply) return false;
+  lockModbus();
+  bool ok = powerSupply->testConnection();
+  unlockModbus();
+  return ok;
+}
+
 // Handle device setting/protection commands (former handleDeviceSettingAction)
 static String handleDeviceSetting(String action, DynamicJsonDocument& doc) {
   bool success = false;
@@ -720,7 +731,7 @@ String handleMqttAction(const String& action, const char* payload) {
     return "{\"action\":\"setConfigResponse\",\"status\":\"success\"}";
   }
   if (action == "powerOutput") {
-    if (powerSupply && powerSupply->testConnection()) {
+    if (psuConnected()) {
       bool enable = doc["enable"];
       lockModbus();
       bool success = setPSUOutput(powerSupply, enable);
@@ -739,7 +750,7 @@ String handleMqttAction(const String& action, const char* payload) {
     return fmtError("powerOutputResponse");
   }
   if (action == "setVoltage") {
-    if (powerSupply && powerSupply->testConnection()) {
+    if (psuConnected()) {
       float voltage = doc["voltage"];
       lockModbus();
       bool success = powerSupply->setVoltage(voltage);
@@ -757,7 +768,7 @@ String handleMqttAction(const String& action, const char* payload) {
     return fmtError("setVoltageResponse");
   }
   if (action == "setCurrent") {
-    if (powerSupply && powerSupply->testConnection()) {
+    if (psuConnected()) {
       float current = doc["current"];
       lockModbus();
       bool success = powerSupply->setCurrent(current);
@@ -775,7 +786,7 @@ String handleMqttAction(const String& action, const char* payload) {
     return fmtError("setCurrentResponse");
   }
   if (action == "setPower") {
-    if (powerSupply && powerSupply->testConnection()) {
+    if (psuConnected()) {
       float power = doc["power"];
       lockModbus();
       bool success = powerSupply->setConstantPower(power);
@@ -792,7 +803,7 @@ String handleMqttAction(const String& action, const char* payload) {
     return fmtError("setPowerResponse");
   }
   if (action == "setKeyLock") {
-    if (powerSupply && powerSupply->testConnection()) {
+    if (psuConnected()) {
       bool lock = doc["lock"];
       lockModbus();
       bool success = powerSupply->setKeyLock(lock);
@@ -810,7 +821,7 @@ String handleMqttAction(const String& action, const char* payload) {
     return fmtError("keyLockResponse");
   }
   if (action == "setConstantVoltage") {
-    if (powerSupply && powerSupply->testConnection()) {
+    if (psuConnected()) {
       float voltage = doc["voltage"];
       lockModbus();
       bool success = powerSupply->setConstantVoltage(voltage);
@@ -827,7 +838,7 @@ String handleMqttAction(const String& action, const char* payload) {
     return fmtError("constantVoltageResponse");
   }
   if (action == "setConstantCurrent") {
-    if (powerSupply && powerSupply->testConnection()) {
+    if (psuConnected()) {
       float current = doc["current"];
       lockModbus();
       bool success = powerSupply->setConstantCurrent(current);
@@ -844,7 +855,7 @@ String handleMqttAction(const String& action, const char* payload) {
     return fmtError("constantCurrentResponse");
   }
   if (action == "setConstantPower") {
-    if (powerSupply && powerSupply->testConnection()) {
+    if (psuConnected()) {
       float power = doc["power"];
       lockModbus();
       bool success = powerSupply->setConstantPower(power);
@@ -861,7 +872,7 @@ String handleMqttAction(const String& action, const char* payload) {
     return fmtError("constantPowerResponse");
   }
   if (action == "setConstantPowerMode") {
-    if (powerSupply && powerSupply->testConnection()) {
+    if (psuConnected()) {
       bool enable = doc["enable"];
       lockModbus();
       bool success = powerSupply->setConstantPowerMode(enable);
