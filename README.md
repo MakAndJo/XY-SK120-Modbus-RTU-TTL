@@ -1,5 +1,5 @@
 # XY-SK120 / XY-SK150 Power Supply Control (MQTT Server)
-![Demo](documentation/demo.jpg)
+![Demo](docs/IMG_2010.jpeg)
 
 Control an XY-SK120 / XY-SK150(S) power supply (and compatible models) over Modbus RTU using a Seeed XIAO ESP32S3 or ESP32C3.
 
