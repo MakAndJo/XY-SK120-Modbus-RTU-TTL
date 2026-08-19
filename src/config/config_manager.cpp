@@ -1,6 +1,5 @@
 #include "config_manager.h"
-#include <FS.h>
-#include <LittleFS.h>  // Built-in ESP32 LittleFS
+#include <Preferences.h>
 #include <ArduinoJson.h>
 
 // Default configuration - made static to avoid global namespace conflict
@@ -11,75 +10,58 @@ static DeviceConfig configData = {
   0,           // parity (0=none, 1=odd, 2=even)
   1,           // stopBits
   5000,        // updateInterval in ms
-  "XY-SK150S"   // deviceName
+  "XY-SK150S"  // deviceName
 };
 
-bool loadConfig() {
-  File configFile = LittleFS.open("/config.json", "r");
-
-  if (!configFile) {
-    Serial.println("Failed to open config file for reading");
+static bool loadFromNVS(DeviceConfig& out) {
+  Preferences prefs;
+  if (!prefs.begin("xyskcfg", true)) {
+    Serial.println("Failed to open NVS for config reading");
     return false;
   }
-
-  size_t size = configFile.size();
-  if (size > 1024) {
-    Serial.println("Config file size is too large");
-    configFile.close();
-    return false;
-  }
-
-  std::unique_ptr<char[]> buf(new char[size]);
-  configFile.readBytes(buf.get(), size);
-  configFile.close();
-
-  DynamicJsonDocument doc(1024);
-  DeserializationError error = deserializeJson(doc, buf.get());
-
-  if (error) {
-    Serial.println("Failed to parse config file");
-    return false;
-  }
-
-  configData.modbusId = doc["modbusId"] | 1;
-  configData.baudRate = doc["baudRate"] | 9600;
-  configData.dataBits = doc["dataBits"] | 8;
-  configData.parity = doc["parity"] | 0;
-  configData.stopBits = doc["stopBits"] | 1;
-  configData.updateInterval = doc["updateInterval"] | 5000;
-
-  strlcpy(configData.deviceName,
-          doc["deviceName"] | "XY-SK120",
-          sizeof(configData.deviceName));
-
-  Serial.println("Config loaded");
+  out.modbusId = prefs.getUChar("modbusId", configData.modbusId);
+  out.baudRate = prefs.getULong("baudRate", configData.baudRate);
+  out.dataBits = prefs.getUChar("dataBits", configData.dataBits);
+  out.parity = prefs.getUChar("parity", configData.parity);
+  out.stopBits = prefs.getUChar("stopBits", configData.stopBits);
+  out.updateInterval = prefs.getUShort("updateInterval", configData.updateInterval);
+  String name = prefs.getString("deviceName", configData.deviceName);
+  strlcpy(out.deviceName, name.c_str(), sizeof(out.deviceName));
+  prefs.end();
   return true;
 }
 
+bool loadConfig() {
+  bool ok = loadFromNVS(configData);
+  if (ok) Serial.println("Config loaded");
+  return ok;
+}
+
 bool saveConfig() {
-  DynamicJsonDocument doc(1024);
-
-  doc["modbusId"] = configData.modbusId;
-  doc["baudRate"] = configData.baudRate;
-  doc["dataBits"] = configData.dataBits;
-  doc["parity"] = configData.parity;
-  doc["stopBits"] = configData.stopBits;
-  doc["updateInterval"] = configData.updateInterval;
-  doc["deviceName"] = configData.deviceName;
-
-  File configFile = LittleFS.open("/config.json", "w");
-  if (!configFile) {
-    Serial.println("Failed to open config file for writing");
+  Preferences prefs;
+  if (!prefs.begin("xyskcfg", false)) {
+    Serial.println("Failed to open NVS for config writing");
     return false;
   }
-
-  serializeJson(doc, configFile);
-  configFile.close();
+  prefs.putUChar("modbusId", configData.modbusId);
+  prefs.putULong("baudRate", configData.baudRate);
+  prefs.putUChar("dataBits", configData.dataBits);
+  prefs.putUChar("parity", configData.parity);
+  prefs.putUChar("stopBits", configData.stopBits);
+  prefs.putUShort("updateInterval", configData.updateInterval);
+  prefs.putString("deviceName", configData.deviceName);
+  prefs.end();
 
   Serial.println("Config saved");
   return true;
 }
 
 DeviceConfig& getConfig() {
+  // Refresh from NVS on first access so external changes are reflected
+  static bool loaded = false;
+  if (!loaded) {
+    loadFromNVS(configData);
+    loaded = true;
+  }
   return configData;
 }

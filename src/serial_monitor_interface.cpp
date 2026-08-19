@@ -4,7 +4,8 @@
 #include "serial_monitor_interface.h"
 #include "config_manager.h"
 #include "wifi_interface/wifi_settings.h" // Include the new wifi_settings header
-#include "wifi_interface/wifi_manager_wrapper.h"
+#include "wifi_interface/wifi_native.h"   // resetWiFiSettings etc.
+#include "mqtt/mqtt_manager.h"           // mqtt set/get console commands
 
 // Include all the interface components
 #include "serial_interface/serial_interface.h"
@@ -12,6 +13,9 @@
 
 // Changed from object to pointer to match main.cpp
 extern XY_SKxxx* powerSupply;
+
+// Handle 'mqtt get|set|start|stop' console commands (defined below)
+void handleMqttConsoleCommand(const String& command);
 
 // Use inline to avoid multiple definition errors at link time
 // These inline functions allow main.cpp to call the real implementations
@@ -44,11 +48,16 @@ inline void checkSerialMonitorInput(XY_SKxxx* ps, XYModbusConfig& config) {
     } else if (command == "wifi") {
       Serial.println("Calling handleWifiSettingsCommands"); // Debug print
       handleWifiSettingsCommands(); // Call the new function
+    } else if (command.startsWith("mqtt ")) {
+      handleMqttConsoleCommand(command);
     } else if (command == "help") {
       Serial.println("Available commands:");
       Serial.println("status - Display current status");
       Serial.println("config - Display current configuration");
       Serial.println("wifi - Configure WiFi settings");
+      Serial.println("mqtt get - Show MQTT config");
+      Serial.println("mqtt set <host> [port] [user] [pass] [name] - Set MQTT config");
+      Serial.println("mqtt start / mqtt stop - Start/stop the MQTT client");
       Serial.println("help - Display available commands");
     } else {
       Serial.println("Invalid command. Type 'help' for available commands.");
@@ -107,5 +116,64 @@ void handleWifiSettingsCommands() {
     default:
       Serial.println("Invalid choice.");
       break;
+  }
+}
+
+// Handle 'mqtt set/get/start/stop' console commands
+void handleMqttConsoleCommand(const String& command) {
+  if (command == "mqtt get") {
+    if (!mqttConfigLoaded()) {
+      Serial.println("MQTT: not configured");
+      return;
+    }
+    Serial.printf("MQTT: host=%s port=%d user=%s pass=%s name=%s state=%s\n",
+                  mqttHost().c_str(), mqttPort(), mqttUser().c_str(),
+                  mqttPass().c_str(), mqttDeviceName().c_str(),
+                  mqttConnected() ? "connected" : "disconnected");
+  } else if (command.startsWith("mqtt set ")) {
+    String args = command.substring(9);
+    args.trim();
+    if (args.length() == 0) {
+      Serial.println("Usage: mqtt set <host> [port] [user] [pass] [name]");
+      return;
+    }
+    int space = args.indexOf(' ');
+    String host = (space > 0) ? args.substring(0, space) : args;
+    String rest = (space > 0) ? args.substring(space + 1) : "";
+    rest.trim();
+
+    uint16_t port = 1883;
+    String user, pass, name;
+    if (rest.length() > 0) {
+      int s2 = rest.indexOf(' ');
+      String portStr = (s2 > 0) ? rest.substring(0, s2) : rest;
+      port = (uint16_t)portStr.toInt();
+      rest = (s2 > 0) ? rest.substring(s2 + 1) : "";
+      rest.trim();
+
+      if (rest.length() > 0) {
+        int s3 = rest.indexOf(' ');
+        user = (s3 > 0) ? rest.substring(0, s3) : rest;
+        rest = (s3 > 0) ? rest.substring(s3 + 1) : "";
+        rest.trim();
+
+        if (rest.length() > 0) {
+          int s4 = rest.indexOf(' ');
+          pass = (s4 > 0) ? rest.substring(0, s4) : rest;
+          rest = (s4 > 0) ? rest.substring(s4 + 1) : "";
+          rest.trim();
+          if (rest.length() > 0) name = rest;
+        }
+      }
+    }
+    if (name.length() == 0) name = "XY-SK150S";
+    mqttSaveConfig(host, port, user, pass, name);
+    Serial.println("MQTT config saved. Restart device or use 'mqtt start'.");
+  } else if (command == "mqtt start") {
+    mqttStart();
+  } else if (command == "mqtt stop") {
+    mqttStop();
+  } else {
+    Serial.println("Usage: mqtt get | mqtt set <host> [port] [user] [pass] [name] | mqtt start | mqtt stop");
   }
 }

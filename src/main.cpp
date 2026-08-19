@@ -1,19 +1,20 @@
 #include <Arduino.h>
-#include <ESPAsyncWebServer.h>
 #include <ModbusMaster.h>
-#include <FS.h>
-#include <LittleFS.h>  // Built-in ESP32 LittleFS
-#include "web_interface.h"
-#include "modbus_handler.h"
+#include <ArduinoOTA.h>
+#include "modbus/modbus_handler.h"
 #include "modbus/rtc_weather.h"
+#include "modbus/psu_service.h"
 #include "config_manager.h"
 #include "XY-SKxxx.h"
 #include "XY-SKxxx_Config.h"
 #include "serial_monitor_interface.h"
 #include "serial_interface/serial_core.h"
 #include "serial_interface/menu_debug.h" // For background bus sniffing (sniffTick)
-#include "wifi_interface/wifi_manager_wrapper.h" // Include wrapper instead of WiFiManager directly
-#include "web_interface/log_utils.h" // Use the web_interface version of the logging utilities
+#include "wifi_interface/wifi_native.h"
+#include "wifi_interface/wifi_settings.h"
+#include "wifi_interface/captive_portal.h"
+#include "mqtt/mqtt_manager.h"
+#include "log_utils/log_utils.h"
 
 // Define WiFi reset button pin based on board
 #ifdef CONFIG_IDF_TARGET_ESP32C3
@@ -28,6 +29,8 @@ XYModbusConfig xyConfig;
 // Create XY_SKxxx instance with default pins (will be updated from config)
 XY_SKxxx* powerSupply = nullptr;
 
+ModbusMaster modbus;
+
 // WiFi host keepalive task: claims the PSU's master/status registers from the
 // very first second of boot (even while WiFi is still connecting), so the PSU
 // screen recognises the WiFi module immediately. The status is written as
@@ -39,12 +42,6 @@ void wifiHostKeepAliveTask(void* param) {
     vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
 }
-
-AsyncWebServer server(80);
-ModbusMaster modbus;
-
-// Remove the local getLogTimestamp implementation
-// Now using the one from log_utils.h
 
 void setup() {
   Serial.begin(115200);
@@ -76,7 +73,6 @@ void setup() {
   #endif
 
   LOG_INFO("Starting XY-SK150 Modbus RTU System");
-  LOG_INFO("WiFi Setup Process Starting...");
 
   // Initialize WiFi reset button
   pinMode(WIFI_RESET_PIN, INPUT_PULLUP);
@@ -90,14 +86,7 @@ void setup() {
     ESP.restart();
   }
 
-  // Initialize LittleFS (correct naming for ESP32)
-  if(!LittleFS.begin(true)) {
-    LOG_ERROR("LittleFS Mount Failed");
-  } else {
-    LOG_INFO("LittleFS initialized successfully");
-  }
-
-  // Initialize the configuration manager
+  // Initialize the configuration manager (NVS)
   if (!XYConfigManager::begin()) {
     Serial.println("Failed to initialize configuration manager");
   }
@@ -110,6 +99,9 @@ void setup() {
 
   // Create the power supply instance with the loaded configuration
   powerSupply = new XY_SKxxx(xyConfig.rxPin, xyConfig.txPin, xyConfig.slaveId);
+
+  // Initialize the Modbus bus mutex before any task can touch the bus
+  initPsuService();
 
   // Initialize Modbus RTU (attaches the global ModbusMaster to Serial1; the
   // real baud/pins are applied by powerSupply->begin() below)
@@ -131,30 +123,17 @@ void setup() {
   // before/while WiFi connects. Status stays "not connected" until WiFi is up.
   xTaskCreatePinnedToCore(wifiHostKeepAliveTask, "wifiHost", 4096, NULL, 1, NULL, 1);
 
-  // For initial setup, force the AP mode to appear temporarily
-  // by forcing WiFi reset once (comment out after first use)
-  // resetWiFiSettings();  // <-- COMMENTED OUT after successful connectionuse
+  // Start the WiFi radio in station mode.
+  initNativeWifiRadio();
 
-  // Attempt to connect to WiFi with clearer naming and feedback
-  Serial.println("Starting WiFi connection process...");
-
-  // Initialize WiFi using the wrapper - use a more descriptive name
-  if(!initWiFiManager("XY-SK150-Setup")) {
-    Serial.println("Failed to connect and hit timeout");
-    Serial.println("Will restart device and try again...");
-    delay(3000);
-    ESP.restart();
+  // Try the saved networks first (priority order).
+  if (!connectToSavedNetworks()) {
+    Serial.println("No saved network reachable - starting provisioning AP");
+    Serial.println("Connect to AP 'XY-SK150-Setup' and open http://192.168.4.1");
+    startCaptivePortal();
   }
 
-  Serial.println("WiFi connected successfully!");
-  Serial.print("IP address: ");
-  Serial.println(getWiFiIP());
-
-  // More robust WiFi stabilization
-  WiFi.persistent(true);
-  WiFi.setSleep(false); // Disable WiFi sleep mode to improve stability
-
-  // Give WiFi more time to stabilize before starting web server
+  // Give WiFi a moment to stabilize
   for(int i=0; i<5; i++) {
     if(WiFi.status() == WL_CONNECTED) {
       Serial.println("WiFi connection stable");
@@ -164,58 +143,24 @@ void setup() {
     delay(1000);
   }
 
-  // This sequence helps resolve binding issues
-  IPAddress localIP = WiFi.localIP();
-  IPAddress subnet = WiFi.subnetMask();
-  IPAddress gateway = WiFi.gatewayIP();
-  IPAddress dns = WiFi.dnsIP();
-
   if (WiFi.status() == WL_CONNECTED) {
-    // Disconnect and reconnect with explicit network parameters
-    WiFi.disconnect(false);
-    delay(500);
-    WiFi.config(localIP, gateway, subnet, dns);
+    Serial.println("WiFi connected successfully!");
+    Serial.print("IP address: ");
+    Serial.println(getWiFiIP());
 
-    if (!WiFi.reconnect()) {
-      Serial.println("Reconnection failed, restarting...");
-      ESP.restart();
-    }
-
-    delay(1000);
-    Serial.print("Reconnected with IP: ");
-    Serial.println(WiFi.localIP());
-  }
-
-  // After WiFi is connected, configure NTP for accurate timestamps
-  if (WiFi.status() == WL_CONNECTED) {
+    // Configure NTP for accurate timestamps and start the background weather
+    // client (Open-Meteo refresh for the PSU weather block).
     configureNTP();
-    startWeatherClient(); // background Open-Meteo refresh for the PSU weather block
+    startWeatherClient();
+
+    // Start the MQTT client (retained info/status, command subscription).
+    mqttStart();
   }
 
-  // Try an alternative approach with server initialization
-  try {
-    // Setup web server routes first
-    setupWebServer(&server);
-
-    // Longer delay to ensure network stack is ready
-    delay(2000);
-
-    // Start server
-    server.begin();
-    Serial.print(getLogTimestamp());
-    Serial.println("HTTP server started successfully");
-  }
-  catch (const std::exception& e) {
-    Serial.print("Error starting server: ");
-    Serial.println("Exception caught");
-
-    // Try a fallback approach
-    delay(5000);
-    server.end();
-    delay(1000);
-    server.begin();
-    Serial.println("HTTP server started (second attempt)");
-  }
+  // OTA over UDP (espota): pio run -e <env> -t upload --upload_port <ip>
+  ArduinoOTA.setHostname(mqttDeviceId().c_str());
+  ArduinoOTA.begin();
+  Serial.printf("ArduinoOTA host: %s\n", mqttDeviceId().c_str());
 
   Serial.println("\n\n----- XY-SK150 Modbus RTU Control System -----");
   displayDeviceStatus(powerSupply);
@@ -228,31 +173,22 @@ void setup() {
 }
 
 void loop() {
-  // No longer update dummy Modbus data
-  // updateModbusData(); // <-- Comment out or remove this line
-
   // Process serial monitor commands
   checkSerialMonitorInput(powerSupply, xyConfig);
 
   // Background bus sniffing (non-blocking, keeps keep-alive running)
   sniffTick(powerSupply);
 
-  // You can process other interfaces here in the future:
-  // processWebSocketMessages();
-  // processRestApiRequests();
-  // processMqttMessages();
+  // OTA service
+  ArduinoOTA.handle();
 
-  // Add any periodic tasks here
-  // Server-side PSU polling: read fresh status and push it to all WebSocket
-  // clients. This is how the UI gets live data - the client never polls.
+  // Periodically read fresh PSU status and publish it over MQTT only when it
+  // actually changed (retained, so the server/client always has the last one).
   static unsigned long lastStatusUpdate = 0;
-  if (millis() - lastStatusUpdate > 250) { // Poll as fast as Modbus allows
+  if (mqttConnected() && millis() - lastStatusUpdate > 250) {
     lastStatusUpdate = millis();
-    pollAndBroadcastPSUStatus();
+    mqttPublishStatus();
   }
-
-  // Keep the WiFi host registers on the PSU alive - handled by the background
-  // wifiHostKeepAliveTask, no longer needed in loop().
 
   // Sync the PSU RTC/weather block (Unix time + zeroed weather, ~10s like the
   // OEM XY-WFPOW module does). Runs only after NTP has provided valid time.

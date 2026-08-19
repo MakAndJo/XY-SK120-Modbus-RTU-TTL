@@ -1,5 +1,5 @@
 #include "wifi_settings.h"
-#include "wifi_manager_wrapper.h" // Include wifi_manager_wrapper for resetWiFiSettings
+#include "wifi_native.h" // resetWiFiSettings, isWiFiConnected, getWiFiSSID/IP/RSSI/MAC
 #include <Preferences.h>
 #include <ArduinoJson.h>
 #include <vector>
@@ -278,7 +278,7 @@ String loadWiFiCredentialsFromNVS() {
 }
 
 bool resetWiFi() {
-    resetWiFiSettings(); // Call the function from wifi_manager_wrapper
+    resetWiFiSettings(); // Call the function from wifi_native
     return true; // Assume success, as there's no return value from resetWiFiSettings
 }
 

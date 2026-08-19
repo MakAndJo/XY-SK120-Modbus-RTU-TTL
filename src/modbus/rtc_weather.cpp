@@ -2,15 +2,14 @@
 #include <Arduino.h>
 #include <time.h>
 #include "XY-SKxxx.h"
-#include "web_interface/log_utils.h"
+#include "log_utils/log_utils.h"
 #include "modbus/weather_api.h"
 
 // Declare external power supply instance (defined in main.cpp)
 extern XY_SKxxx* powerSupply;
 
-// Recursive Modbus-bus mutex, defined in web_interface.cpp
-extern void lockModbus();
-extern void unlockModbus();
+// Recursive Modbus-bus mutex, defined in psu_service.cpp
+#include "modbus/psu_service.h"
 
 // Manual weather override (see header).
 bool weatherManualMode = false;

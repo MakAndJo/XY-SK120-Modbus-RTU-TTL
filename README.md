@@ -4,20 +4,34 @@
 
 ![Demo](documentation/demo.gif)
 
-Control an XY-SK120 / XY-SK150(S) power supply (and compatible models) over Modbus RTU using a Seeed XIAO ESP32S3 or ESP32C3. The firmware provides a web UI, a serial monitor interface, RTC/weather sync to the PSU screensaver, and a full set of register-debugging tools.
+Control an XY-SK120 / XY-SK150(S) power supply (and compatible models) over Modbus RTU using a Seeed XIAO ESP32S3 or ESP32C3.
+
+The firmware no longer hosts a web UI. The device connects to an MQTT broker and is controlled from a separate **server + browser client** in this repository, while the serial monitor interface, RTC/weather sync and the register-debugging tools stay on the device.
+
+## Architecture
+
+```
++----------------+   MQTT (TCP 1883)   +----------------+   WebSocket        +----------------+
+|  Firmware      | <-----------------> |   Server       | <----------------> |  Browser       |
+|  (ESP32)       |                     |   (aedes)      |   (WS /ws :8080)  |  client        |
++----------------+                     +----------------+                    +----------------+
+                                          |  POST /api/bind  { key }
+                                          v
+                                     HTTP :8080 (UI + WS gateway)
+```
+
+- Device = MQTT client. Publishes identity + live status (retained), subscribes to commands, answers on a response topic. See [docs/MQTT_PROTOCOL.md](docs/MQTT_PROTOCOL.md).
+- Server = embedded MQTT broker (aedes) on TCP :1883 for devices, plus a WebSocket gateway at `/ws` on :8080 and a bind API. The browser never speaks MQTT and the server does not run a second MQTT client: the gateway **hooks into the in-process broker's publish stream** (`broker.on('publish')` / `broker.publish()`) and talks to the browser with plain JSON WebSocket frames (`bind`/`subscribe`/`command`). See `server/`.
+- Client = single-page UI (dashboards for output, protections, memory groups) in `client/`, served by the server. Uses only a native `WebSocket` — no MQTT library in the browser.
 
 ## Features
 
-- **Web UI** (HTTP + WebSocket) served directly from the ESP32:
-  - Live dashboard: output voltage / current / power, mode (CV/CC/CW), temperatures, energy counters
-  - Output on/off, key lock, protection clear
-  - Profile (memory group M0–M9) editor: read, save and apply full profiles
-  - Device settings: backlight, sleep, slave address, baud rate, temp unit, beeper, MPPT, CP mode, BCH/BTF/CLOF battery settings, timezone
-  - WiFi module status (PSU host block) + WiFi network management
-  - Multi-device support: switch between several PSU servers saved in the browser
+- **MQTT control** — output on/off, V/A/W set, CV/CC/CP, key lock, protections (OVP/OCP/OPP/OTP/LVP), memory groups, beeper, backlight, sleep, timezone, PSU reset
+- **Device bind** — each device has a `deviceId` (`dev_<last6 MAC>`); first boot shows a bind key (md5 of deviceId). Enter it in the client to bind the device to your user.
 - **RTC / weather sync** — every ~10 s the ESP32 pushes Unix time plus a 3-day Open-Meteo forecast into the PSU's screensaver (register block `0x0200–0x0214`, same frame the OEM XY-WFPOW module sends)
-- **Serial monitor control interface** — menus for basic control, measurement, protection, settings, memory groups, WiFi and register debugging
+- **Serial monitor control interface** — menus for basic control, measurement, protection, settings, memory groups, WiFi, MQTT and register debugging
 - **Register debugging** — scan/compare/sniff tools to discover undocumented registers (see below)
+- **OTA updates** — dual app partitions + ArduinoOTA/espota on both targets; no USB needed after the first flash
 - ESP32S3 and ESP32C3 targets
 
 ## Hardware Setup
@@ -26,44 +40,24 @@ Control an XY-SK120 / XY-SK150(S) power supply (and compatible models) over Modb
   - XIAO TX pin → XY-SK120 RX pin
   - XIAO RX pin → XY-SK120 TX pin
   - XIAO GND → XY-SK120 GND
-- First boot opens a WiFiManager AP (`XY-SK150-Setup`) to configure your network; holding the WiFi reset pin (D0 on ESP32S3, GPIO9 on ESP32C3) to ground for 3 s resets the WiFi settings.
+- First boot opens a provisioning AP (`XY-SK150-Setup`, http://192.168.4.1) where you enter your WiFi credentials; the page also shows the device bind key. Holding the WiFi reset pin (D0 on ESP32S3, GPIO9 on ESP32C3) to ground for 3 s resets the WiFi settings.
 
-## Web Interface
+## First run
 
-After connecting, open `http://<esp-ip>/` in a browser. The UI is a single page with three tabs: **Главная** (live dashboard), **Профили** (memory group profiles) and **Настройки** (device/WiFi settings).
-
-Live data is pushed by the server over WebSocket (`/ws`) — the client never polls. See [README_WEB_UI.md](README_WEB_UI.md) for the full endpoint/action reference.
-
-### HTTP endpoints
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/` | Web UI (`index.html`) |
-| GET | `/api/data` | Current PSU status (JSON) |
-| GET/POST | `/api/config` | Device configuration (name, Modbus ID, baud, etc.) |
-| GET/POST | `/api/timezone` | Available time zones + current one / set timezone |
-| GET | `/health`, `/ping` | Health checks |
-| WS | `/ws` | WebSocket for live status + all control commands |
-
-### WebSocket actions (client → server)
-
-Control: `powerOutput`, `setVoltage`, `setCurrent`, `setPower`, `setConstantVoltage`, `setConstantCurrent`, `setConstantPower`, `setConstantPowerMode`, `setKeyLock`, `getKeyLockStatus`, `getStatus`/`getData`, `getOperatingMode`.
-
-Device settings & protection: `setProtection` (key: `lvp`/`ovp`/`ocp`/`opp`/`otp`), `setBacklight`, `setSleepTimeout`, `setSlaveAddress`, `setBaudRate`, `setTempUnit`, `setBeeper`, `setMppt`, `setBatteryCutoff`, `setBch`, `setBtfEnable`, `setBtfCutoff`, `setClof`, `setPowerOnInit`, `setCpMode`, `setOhp`, `setOha`, `setOwh`, `setMemoryGroup`, `getMemoryGroup`, `saveMemoryGroup`, `psuReset`, `clearProtection`.
-
-WiFi & system: `getWifiStatus`, `addWifiNetwork`, `loadWifiCredentials`, `saveWifiCredentials`, `removeWifiNetwork`, `updateWifiPriority`, `connectWifi`, `resetWifi`, `getTimeZones`, `setTimeZone`, `restart`.
+1. Build & flash the firmware over USB once (see [Building](#building)).
+2. Connect to the `XY-SK150-Setup` AP, open http://192.168.4.1, enter WiFi credentials, note the bind key.
+3. Start the server: `cd server && npm install && npm start`.
+4. Open http://localhost:8080, enter the bind key → device bound and controllable.
 
 ## RTC & Weather Sync
 
-The PSU's screensaver can display the current time and a 3-day weather forecast, but it only shows them when a Sinilink XY-WFPOW WiFi module (acting as Modbus master) feeds it. This firmware does the same:
-
-- **Time**: NTP sync + timezone (selectable in the UI, 14 zones from UTC-8 to UTC+12), pushed as local Unix time to `0x0200–0x0201` every ~10 s.
+- **Time**: NTP sync + timezone, pushed as local Unix time to `0x0200–0x0201` every ~10 s.
 - **Weather**: a background task fetches current conditions + 3-day forecast from Open-Meteo (default location is Tyumen, RU; override via `setWeatherMeteoConfig(lat, lon)`), maps the WMO codes onto the PSU's screensaver icon set and writes the block `0x0203–0x0214`.
 - The whole 21-register block `0x0200–0x0214` is written with one Modbus function 0x10 request, mirroring the OEM module.
 
 ## Serial Monitor Commands
 
-Enter the menu number (`1`–`7`) or type a command. Top-level commands: `status`, `prot`, `config`, `info`, `help`.
+Enter the menu number (`1`–`7`) or type a command. Top-level commands: `status`, `prot`, `config`, `info`, `mqtt get`, `mqtt set <host> [port] [user] [pass] [name]`, `mqtt start`, `mqtt stop`, `help`.
 
 ### 1. Basic Control
 
@@ -146,30 +140,53 @@ For the complete map see `lib/XY-SKxxx/XY-SKxxx.h` and the docs in `documentatio
 
 ## Building
 
-This project uses PlatformIO. Build and upload firmware + filesystem:
+This project uses PlatformIO. Flash over USB once (serial):
 
 ```
-pio run -t upload            # build & upload firmware
-pio run -t uploadfs          # build & upload the LittleFS web UI
+pio run -e seeed_xiao_esp32s3 -t upload     # or seeed_xiao_esp32c3
 ```
 
-Select the board environment (`seeed_xiao_esp32s3` default, `seeed_xiao_esp32c3` for the C3). Useful custom targets:
+After that, OTA over the network (ArduinoOTA / espota):
+
+```
+pio run -e seeed_xiao_esp32s3 -t upload --upload_port <device-ip>
+```
+
+Useful custom targets:
 
 ```
 pio run -t custom_showsize   # firmware size breakdown
 pio run -t custom_showpart   # partition table info
 ```
 
+## Running the server + client
+
+```
+cd server
+npm install
+npm start
+```
+
+- Broker (devices): `mqtt://<host>:1883`
+- Client UI + WebSocket gateway: `http://<host>:8080` (gateway at `/ws`)
+- Bind API: `POST http://<host>:8080/api/bind`
+
+The HTTP port can be overridden with `HTTP_PORT`, the broker port with `MQTT_PORT`. Device → broker connection settings are configured on the device via serial (`mqtt set <host> [port] [user] [pass] [name]`) or NVS.
+
 ## Project Layout
 
-- `src/main.cpp` — boot, WiFi stabilization, background tasks (WiFi host keep-alive, weather fetch, RTC/weather sync)
-- `src/web_interface/` — HTTP routes + WebSocket command handling
+- `src/main.cpp` — boot, WiFi, provisioning AP, background tasks (WiFi host keep-alive, weather fetch, RTC/weather sync), MQTT + OTA start
+- `src/modbus/psu_service.*` — Modbus mutex, batched status reads, status JSON, command dispatch (`handleMqttAction`)
 - `src/modbus/` — RTC/weather sync (`rtc_weather.*`) and Open-Meteo client (`weather_api.*`)
+- `src/mqtt/` — MQTT client (config, connect, LWT, retained info/status, command subscription)
+- `src/wifi_interface/` — native WiFi (connect to saved networks by priority), captive provisioning portal, credentials storage (`wifi_settings.*`)
 - `src/serial_interface/` — serial menu system
-- `src/wifi_interface/` — WiFiManager wrapper, credentials storage
-- `src/config/` — NVS/LittleFS configuration
+- `src/config/` — NVS configuration (Preferences-based)
+- `src/log_utils/` — logging, NTP, time zones
 - `lib/XY-SKxxx/` — XY-SKxxx Modbus register library
-- `data/` — web UI (`index.html`, `main.js`, `style.css`)
+- `server/` — Node.js MQTT broker + WebSocket gateway + bind API
+- `client/` — single-page browser UI (native WebSocket, no MQTT lib)
+- `docs/MQTT_PROTOCOL.md` — the device<->server<->client wire contract
 
 ## License
 

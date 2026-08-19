@@ -36,7 +36,14 @@ bool resetWiFi();
 // Function to get WiFi status as a JSON string
 String getWifiStatus();
 
-// Forward declaration of function in wifi_manager_wrapper.cpp
+// Forward declaration of function in wifi_native.cpp
 bool connectToSavedNetworks();
+
+// WiFi status / info getters (implemented in wifi_native.cpp)
+bool isWiFiConnected();
+String getWiFiSSID();
+String getWiFiIP();
+int getWiFiRSSI();
+String getWiFiMAC();
 
 #endif // WIFI_SETTINGS_H
