@@ -79,9 +79,64 @@
 
 #define REG_S_INI          0x005D    // Power-on initialization setting, 2 bytes, 0 decimal places, unit: 0/1 (0: output off upon power on, 1: output on upon power on), Read and Write
 
-// Additional Modbus register addresses for XY-SK120 0x0100 - 0x0103, will not implement these as it's related to RTC (Real Time Clock) settings
+// ============================================================================
+// RTC / Weather block (0x0200 - 0x0214) - discovered by sniffing the Sinilink
+// XY-WFPOW WiFi module against an XY-SK150S. The module (acting as Modbus MASTER,
+// slave addr 0x01) writes this whole 21-register / 42-byte block with function
+// 0x10 (write multiple) roughly every 10 seconds:
+//
+//   01 10 02 00 00 15 2A <42 bytes> CRC
+//
+// The 42 bytes are byte-for-byte the weather struct (DAT_40202894) filled by the
+// module's JSON parser. NOTE: this is the REAL register address used by the WiFi
+// module - NOT 0x0100/0x0103 RTC or 0x0110/0x011D weather from the XY-SK120 docs.
+// ============================================================================
+#define REG_RTC_TIME_LO    0x0200  // Unix epoch seconds, low  16 bits (time & 0xFFFF)
+#define REG_RTC_TIME_HI    0x0201  // Unix epoch seconds, high 16 bits (time >> 16)
+#define REG_RTC_STATUS     0x0202  // Time/weather sync status, 0x0001=connecting, 0x0002=IP obtained, 0x0003=time synced
+#define REG_WX_TODAY_CODE  0x0203  // Today weather condition code (see icon map below).
+                                   // Icon map (discovered by writing one code at a time):
+                                   //   0=луна           1=два облака         2=облако
+                                   //   3=два обл.+солнце 4=луна за облаком   5=солнце
+                                   //   6=солнце за 2 обл. 7=солнце за обл.   8=обл.4капли+луна
+                                   //   9=обл.4капли+солн. 10=обл.2кап.+гроза  11=обл.4кап.+гроза
+                                   //  12=пусто          13=обл.1точка        14=обл.3точки
+                                   //  15=обл.5точек     16=6 точек           17=обл.5точек
+                                   //  18=обл.7точек     19=обл.4лин.+3т.     20=обл.7палок
+                                   //  21=обл.5точек     22=обл.2т.+1палка    23=обл.3т.+1палка
+                                   //  24=обл.4т.+палка  25=обл.4т.+палка     26=5 палок
+                                   //  27=обл.луна+1т.   28=обл.луна+5т.      29=три капли
+                                   //  30=обл.1снеж.     31=обл.3снеж.        32=обл.5снеж.
+                                   //  33=обл.7снеж.     34=обл.3кап.+2снеж.  35=снеж./капля
+                                   //  36=луна обл.снеж. 37=3 снежинки        38=обл.снеж./снеж.
+                                   //  39=обл.снеж./2снеж. 40=обл.2снеж./2снеж. 41=обл.луна кап. снеж.
+                                   //  42=луна обл.снеж. 43=3 снежинки        44=круг 3 гориз.палки
+                                   //  45=3 гориз.палки  46=бесконечность     47=ураган
+                                   //  48=6т.+1 гориз.п. 49=ветер три         50=смерч
+                                   //  51=смерч          52=5 гориз.п.с прорез. 53=беск.+4т.
+                                   //  54=беск.+6т.      55=беск.+8т.         56=5 гориз.палок
+                                   //  57=5 гор.палок смещ. 58=градусник+     59=градусник-
+                                   //  60=N/A (0x3C error/unset)
+#define REG_WX_TODAY_TEMPH 0x0204  // Today high temperature (short, parser, °C)
+#define REG_WX_TODAY_TEMPL 0x0205  // Today low temperature (short, parser, °C)
+#define REG_WX_TODAY_FLAG  0x0206  // Discovered: rendered as "NNc" next to high/low on screen -> current temp (°C)
+#define REG_WX_TODAY_WCODE 0x0207  // Discovered: rendered as "NN%" on screen -> humidity (%)
+#define REG_WX_TODAY_RES0  0x0208  // Today reserved (parser offset +0x10)
+#define REG_WX_TODAY_WLEVEL 0x0209 // Today wind level (windLevel)
+#define REG_WX_TODAY_WL_HI 0x020A  // Today wind level, high word
+#define REG_WX_TODAY_WL_LO 0x020B  // Today wind level, low word
+#define REG_WX_DAY1_CODE   0x020C  // Day 1 forecast weather code
+#define REG_WX_DAY1_TEMPH  0x020D  // Day 1 forecast high temp
+#define REG_WX_DAY1_TEMPL  0x020E  // Day 1 forecast low temp
+#define REG_WX_DAY2_CODE   0x020F  // Day 2 forecast weather code
+#define REG_WX_DAY2_TEMPH  0x0210  // Day 2 forecast high temp
+#define REG_WX_DAY2_TEMPL  0x0211  // Day 2 forecast low temp
+#define REG_WX_DAY3_CODE   0x0212  // Day 3 forecast weather code
+#define REG_WX_DAY3_TEMPH  0x0213  // Day 3 forecast high temp
+#define REG_WX_DAY3_TEMPL  0x0214  // Day 3 forecast low temp
 
-// Additional Modbus register addresses for XY-SK120 0x0110 - 0x011D, will not implement these as it's related to weather infomration???
+// Legacy note: XY-SK120 docs mention RTC at 0x0100-0x0103 and weather at
+// 0x0110-0x011D, but the real XY-WFPOW module writes these into 0x0200-0x0214.
 
 /* Below are undocumented registers, available in the XY-SK120 manual and OSD (On-Screen Display) 
 but not in the Modbus register map documentation
@@ -110,6 +165,22 @@ but not in the Modbus register map documentation
 // CP Setting (Constant Power Mode)
 #define REG_CP_ENABLE     0x0022  // Constant Power mode enable/disable, 2 bytes, 0 decimal places, unit: 0/1, Read and Write
 #define REG_CP_SET        0x0023  // Constant Power setting, 2 bytes, 1 decimal place, unit: W, Read and Write
+
+// BCH/BTF/CLOF settings (battery charging / output-off on group change)
+// Discovered from SK150/SK150S ESPHome integration, not in the official XY-SK120 register map
+#define REG_BCH_ENABLE     0x0029  // BCH enable (battery charging), 0/1, Read and Write
+#define REG_BCH_THRESHOLD  0x002A  // BCH threshold, 2 decimal places, unit: V, Read and Write
+#define REG_BTF_ENABLE     0x002B  // BTF enable (battery cutoff), 0/1, Read and Write
+#define REG_BTF_CUTOFF     0x002C  // BTF cutoff current, 3 decimal places, unit: A, Read and Write
+#define REG_CLOF_ENABLE    0x002D  // CLOF (force output off on memory group switch), 0/1, Read and Write
+
+// Host / WiFi module registers (Sinilink ESP8285H16 / XY-WFPOW). Writing
+// {0x3B3A, 2, 4, ip_hi, ip_lo} to 0x0030-0x0034 activates the WiFi host.
+#define REG_MASTER     0x0030  // Host type, 0x3B3A = WiFi host, Read and Write
+#define REG_WIFI_CONFIG 0x0031 // WiFi configuration status, 0=Invalid, 1=Pairing, 2=Valid, Read and Write
+#define REG_WIFI_STATUS 0x0032 // WiFi status, 0=Invalid, 1=Router, 2=Server, 3=Touch, 4=AP/Connected, 5=Online, Read and Write
+#define REG_IPV4_H      0x0033  // IP address high word (octet1<<8 | octet2), Read and Write
+#define REG_IPV4_L      0x0034  // IP address low word (octet3<<8 | octet4), Read and Write
 
 // BCH setting (Battery Charging)
 
@@ -380,6 +451,10 @@ public:
   bool debugWriteRegister(uint16_t addr, uint16_t value);
   bool debugWriteRegisters(uint16_t addr, uint8_t count, const uint16_t* values);
 
+  // Read input registers (Modbus function code 0x04). Used to probe for
+  // RTC/weather areas (0x0100+) which may live in the input-register space.
+  bool readInputRegisters(uint16_t addr, uint16_t count, uint16_t* buffer);
+
   // Memory Group Methods
   
   /**
@@ -456,6 +531,26 @@ public:
   bool getBatteryCutoffCurrent(float &current);
   float getCachedBatteryCutoffCurrent(bool refresh = false);
   bool updateBatteryCutoffCurrent(bool force = false);
+
+  // Battery charging / output-off (BCH/BTF/CLOF) settings methods
+  bool setBatteryChargingEnable(bool enabled);
+  bool getBatteryChargingEnable(bool &enabled);
+  bool setBatteryChargingThreshold(float threshold);
+  bool getBatteryChargingThreshold(float &threshold);
+  bool setBatteryCutoffEnable(bool enabled);
+  bool getBatteryCutoffEnable(bool &enabled);
+  bool setBatteryCutoffCurrentBtf(float current);
+  bool getBatteryCutoffCurrentBtf(float &current);
+  bool setOutputOffOnGroupChange(bool enabled);
+  bool getOutputOffOnGroupChange(bool &enabled);
+
+  // Host / WiFi module methods
+  bool setWifiHostInfo(uint16_t hostType, uint16_t wifiConfig, uint16_t wifiStatus,
+                       uint32_t ipv4);
+  bool getWifiHostInfo(uint16_t &hostType, uint16_t &wifiConfig, uint16_t &wifiStatus,
+                       uint32_t &ipv4);
+  bool activateWifiModule(uint32_t ipv4);
+  bool setMasterCode(uint16_t hostType);
 
   // Operating mode access method
   OperatingMode getOperatingMode(bool refresh = false);

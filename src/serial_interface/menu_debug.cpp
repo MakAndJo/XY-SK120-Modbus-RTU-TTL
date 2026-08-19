@@ -11,9 +11,18 @@ void displayDebugMenu() {
   Serial.println("writerange [start] [end] [value] [delay_ms] - Write value to range of registers");
   Serial.println("mwrite [reg1] [val1] [reg2] [val2] ... - Write multiple registers (decimal)");
   Serial.println("mwritehex [reg1] [val1] [reg2] [val2] ... - Write multiple registers (hex)");
+  Serial.println("wblock [start] [count] [v1 v2 ...] - Write contiguous block via FC16 (decimal)");
+  Serial.println("wblockhex [start] [count] [v1 v2 ...] - Write contiguous block via FC16 (hex)");
   Serial.println("writetrial [register] [start] [end] [delay_ms] - Try writing range of values to register");
+  Serial.println("weather [code] [tHigh] [tLow] [tNow] [humidity] - Write today weather (RTC block)");
+  Serial.println("weather off - Stop auto weather sync (keep manual values)");
+  Serial.println("weatherscan [start] [end] - Auto-bump icon code every second, index shown as temp");
   Serial.println("raw [function] [register] [count] - Read raw register block");
   Serial.println("scan [start] [end] - Scan register range");
+  Serial.println("sniff [seconds] - Listen on Modbus bus for PSU-initiated frames");
+  Serial.println("read4 [register] - Read input register via FC04 (decimal)");
+  Serial.println("read4hex [register] - Read input register via FC04 (hex)");
+  Serial.println("scan4 [start] [end] - Scan input register range via FC04");
   Serial.println("compare [start] [end] - Scan and compare register values before/after changing settings");
   Serial.println("menu - Return to main menu");
   Serial.println("help - Show this menu");
@@ -26,8 +35,18 @@ void handleDebugMenu(const String& input, XY_SKxxx* ps) {
   }
   
   // Handle basic read/write commands
+  if (input.startsWith("read4")) {
+    handleDebugReadInput(input, ps);
+    return;
+  }
+  
   if (input.startsWith("read") || input.startsWith("write") || 
       input.startsWith("mwrite") || input.startsWith("raw")) {
+    handleDebugReadWrite(input, ps);
+    return;
+  }
+  
+  if (input.startsWith("wblock")) {
     handleDebugReadWrite(input, ps);
     return;
   }
@@ -35,6 +54,16 @@ void handleDebugMenu(const String& input, XY_SKxxx* ps) {
   // Handle scan and compare commands
   if (input.startsWith("scan ")) {
     handleDebugScan(input, ps);
+    return;
+  }
+  
+  if (input.startsWith("sniff")) {
+    handleDebugSniff(input, ps);
+    return;
+  }
+  
+  if (input.startsWith("scan4 ")) {
+    handleDebugScanInput(input, ps);
     return;
   }
   
@@ -52,6 +81,18 @@ void handleDebugMenu(const String& input, XY_SKxxx* ps) {
   // Handle write range command
   if (input.startsWith("writerange ")) {
     handleDebugWriteRange(input, ps);
+    return;
+  }
+  
+  // Handle manual weather block write
+  if (input.startsWith("weatherscan")) {
+    handleDebugWeatherScan(input, ps);
+    return;
+  }
+  
+  // Handle manual weather block write
+  if (input.startsWith("weather")) {
+    handleDebugWeather(input, ps);
     return;
   }
   

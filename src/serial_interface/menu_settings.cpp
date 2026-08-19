@@ -1,6 +1,7 @@
 #include "menu_settings.h"
 #include "serial_core.h"
 #include "serial_interface.h"
+#include "menu_main.h"  // Add this include to access displayMainMenu()
 
 void displaySettingsMenu() {
   Serial.println("\n==== Device Settings ====");
@@ -50,46 +51,108 @@ void handleSettingsMenu(const String& input, XY_SKxxx* ps, XYModbusConfig& confi
   } else if (input.startsWith("address ")) {
     uint8_t address;
     if (parseUInt8(input.substring(8), address)) {
+      if (ps->setSlaveAddress(address)) {
+        Serial.print("Modbus address set to: ");
+        Serial.println(address);
+        Serial.println("You must save and restart the device for this to take effect");
+      } else {
+        Serial.println("Failed to set Modbus address");
+      }
+    }
+  } else if (input.startsWith("slave ")) {
+    uint8_t address;
+    if (parseUInt8(input.substring(6), address)) {
       if (address >= 1 && address <= 247) {
         if (ps->setSlaveAddress(address)) {
-          Serial.print("Modbus address set to: ");
+          Serial.print("Slave address set to: ");
           Serial.println(address);
-          Serial.println("You must save and restart the device for this to take effect");
+          Serial.println("You must save settings for this to take effect");
         } else {
-          Serial.println("Failed to set Modbus address");
+          Serial.println("Failed to set slave address");
         }
       } else {
-        Serial.println("Invalid address. Must be between 1 and 247.");
+        Serial.println("Invalid address. Must be between 1-247.");
       }
+    }
+  } else if (input.startsWith("brightness ")) {
+    uint8_t level;
+    if (parseUInt8(input.substring(11), level)) {
+      if (level >= 1 && level <= 5) {
+        if (ps->setBacklightBrightness(level)) {
+          Serial.print("Display brightness set to: ");
+          Serial.println(level);
+        } else {
+          Serial.println("Failed to set display brightness");
+        }
+      } else {
+        Serial.println("Invalid brightness level. Must be between 1-5.");
+      }
+    }
+  } else if (input.startsWith("tempunit ")) {
+    String unit = input.substring(9);
+    unit.toLowerCase();
+    unit.trim();
+    
+    if (unit == "c") {
+      if (ps->setTemperatureUnit(false)) {
+        Serial.println("Temperature unit set to Celsius");
+      } else {
+        Serial.println("Failed to set temperature unit");
+      }
+    } else if (unit == "f") {
+      if (ps->setTemperatureUnit(true)) {
+        Serial.println("Temperature unit set to Fahrenheit");
+      } else {
+        Serial.println("Failed to set temperature unit");
+      }
+    } else {
+      Serial.println("Invalid unit. Use 'c' for Celsius or 'f' for Fahrenheit");
+    }
+  } else if (input.startsWith("sleep ")) {
+    uint8_t timeout;
+    if (parseUInt8(input.substring(6), timeout)) {
+      if (timeout <= 30) {
+        if (ps->setSleepTimeout(timeout)) {
+          if (timeout == 0) {
+            Serial.println("Sleep function disabled");
+          } else {
+            Serial.print("Sleep timeout set to ");
+            Serial.print(timeout);
+            Serial.println(" minutes");
+          }
+        } else {
+          Serial.println("Failed to set sleep timeout");
+        }
+      } else {
+        Serial.println("Invalid timeout. Must be between 0-30.");
+      }
+    }
+  } else if (input.startsWith("rxpin ")) {
+    uint8_t pin;
+    String pinStr = input.substring(6);
+    if (parseUInt8(pinStr, pin)) {
+      config.rxPin = pin;
+      Serial.println("RX pin set to " + String(pin));
+    }
+  } else if (input.startsWith("txpin ")) {
+    uint8_t pin;
+    String pinStr = input.substring(6);
+    if (parseUInt8(pinStr, pin)) {
+      config.txPin = pin;
+      Serial.println("TX pin set to " + String(pin));
     }
   } else if (input == "save") {
     if (ps->updateDeviceSettings()) {
       Serial.println("Settings saved to device");
-      Serial.println("Please restart the device for changes to take effect");
     } else {
       Serial.println("Failed to save settings");
     }
   } else if (input == "default") {
-    // No direct function for factory reset, so we'll use writeRegister
-    if (ps->writeRegister(0x2000, 0x0001)) {  // Assume register 0x2000 with value 1 restores defaults
-      Serial.println("Factory defaults command sent");
-      Serial.println("Please restart the device for changes to take effect");
+    if (ps->restoreFactoryDefaults()) {
+      Serial.println("Factory defaults restored");
+      Serial.println("Device will restart. Please reconnect with default settings.");
     } else {
       Serial.println("Failed to restore factory defaults");
-    }
-  } else if (input.startsWith("rxpin ")) {
-    uint8_t pin;
-    if (parseUInt8(input.substring(6), pin)) {
-      config.rxPin = pin;
-      Serial.print("RX Pin set to: ");
-      Serial.println(pin);
-    }
-  } else if (input.startsWith("txpin ")) {
-    uint8_t pin;
-    if (parseUInt8(input.substring(6), pin)) {
-      config.txPin = pin;
-      Serial.print("TX Pin set to: ");
-      Serial.println(pin);
     }
   } else if (input == "saveconfig") {
     if (XYConfigManager::saveConfig(config)) {
@@ -117,55 +180,21 @@ void handleSettingsMenu(const String& input, XY_SKxxx* ps, XYModbusConfig& confi
     } else {
       Serial.println("Invalid option. Use 'on' or 'off'");
     }
-  } else if (input.startsWith("brightness ")) {
-    uint8_t level;
-    if (parseUInt8(input.substring(11), level)) {
-      if (level >= 1 && level <= 5) {
-        if (ps->setBacklightBrightness(level)) {
-          Serial.print("Display brightness set to: ");
-          Serial.println(level);
-        } else {
-          Serial.println("Failed to set brightness");
-        }
-      } else {
-        Serial.println("Invalid brightness level. Use 1-5 (5 is brightest)");
-      }
-    }
-  } else if (input.startsWith("tempunit ")) {
-    String unit = input.substring(9);
-    unit.trim();
-    unit.toLowerCase();
-    
-    if (unit == "c" || unit == "celsius") {
-      if (ps->setTemperatureUnit(false)) { // Changed from true to false
-        Serial.println("Temperature unit set to Celsius");
-      } else {
-        Serial.println("Failed to set temperature unit");
-      }
-    } else if (unit == "f" || unit == "fahrenheit") {
-      if (ps->setTemperatureUnit(true)) { // Changed from false to true
-        Serial.println("Temperature unit set to Fahrenheit");
-      } else {
-        Serial.println("Failed to set temperature unit");
-      }
-    } else {
-      Serial.println("Invalid unit. Use 'c' for Celsius or 'f' for Fahrenheit");
-    }
   } else if (input.startsWith("mppt ")) {
     String subCmd = input.substring(5);
     subCmd.trim();
     
     if (subCmd == "on") {
       if (ps->setMPPTEnable(true)) {
-        Serial.println("MPPT enabled");
+        Serial.println("MPPT mode enabled");
       } else {
-        Serial.println("Failed to enable MPPT");
+        Serial.println("Failed to enable MPPT mode");
       }
     } else if (subCmd == "off") {
       if (ps->setMPPTEnable(false)) {
-        Serial.println("MPPT disabled");
+        Serial.println("MPPT mode disabled");
       } else {
-        Serial.println("Failed to disable MPPT");
+        Serial.println("Failed to disable MPPT mode");
       }
     } else {
       Serial.println("Invalid option. Use 'on' or 'off'");
@@ -173,103 +202,61 @@ void handleSettingsMenu(const String& input, XY_SKxxx* ps, XYModbusConfig& confi
   } else if (input.startsWith("mpptthr ")) {
     float threshold;
     if (parseFloat(input.substring(8), threshold)) {
-      // Check if input is in percentage form (0-100)
-      if (threshold > 1.0f && threshold <= 100.0f) {
-        // Convert from percentage to 0-1 range
-        threshold = threshold / 100.0f;
-      } else if (threshold < 0.0f || threshold > 1.0f) {
-        Serial.println("Invalid threshold value. Use a value between 0-100%");
-        return;
-      }
-      
-      if (ps->setMPPTThreshold(threshold)) {
-        Serial.print("MPPT threshold set to: ");
-        Serial.print(threshold * 100, 0);
-        Serial.println("%");
-      } else {
-        Serial.println("Failed to set MPPT threshold");
-      }
-    }
-  } else if (input.startsWith("slave ")) {
-    uint8_t address;
-    if (parseUInt8(input.substring(6), address)) {
-      if (address >= 1 && address <= 247) {
-        Serial.println("\n⚠️ WARNING: Changing the slave address will affect communication!");
-        Serial.println("Are you sure you want to proceed? (y/n)");
-        
-        // Wait for confirmation
-        while (!Serial.available()) { delay(10); }
-        char confirm = Serial.read();
-        
-        // Flush remaining input
-        while (Serial.available()) { Serial.read(); }
-        
-        if (confirm == 'y' || confirm == 'Y') {
-          if (ps->setSlaveAddress(address)) {
-            Serial.print("Slave address set to: ");
-            Serial.println(address);
-            Serial.println("Please update your configuration accordingly.");
-            
-            // Update the config
-            config.slaveId = address;
-          } else {
-            Serial.println("Failed to set slave address");
-          }
+      // Convert from percentage (0-100) to decimal (0-1)
+      if (threshold >= 0 && threshold <= 100) {
+        threshold /= 100.0f;
+        if (ps->setMPPTThreshold(threshold)) {
+          Serial.print("MPPT threshold set to ");
+          Serial.print(threshold * 100, 0);
+          Serial.println("%");
         } else {
-          Serial.println("Operation cancelled");
+          Serial.println("Failed to set MPPT threshold");
         }
       } else {
-        Serial.println("Invalid slave address. Must be between 1 and 247.");
+        Serial.println("Invalid threshold. Must be between 0-100%.");
       }
     }
   } else if (input.startsWith("baud ")) {
     uint8_t baudCode;
     if (parseUInt8(input.substring(5), baudCode)) {
       if (baudCode <= 8) {
-        Serial.println("\n⚠️ WARNING: Changing the baudrate will affect communication!");
-        Serial.println("Are you sure you want to proceed? (y/n)");
-        
-        // Wait for confirmation
-        while (!Serial.available()) { delay(10); }
-        char confirm = Serial.read();
-        
-        // Flush remaining input
-        while (Serial.available()) { Serial.read(); }
-        
-        if (confirm == 'y' || confirm == 'Y') {
-          if (ps->setBaudRate(baudCode)) {
-            long newBaud = 0;
-            switch (baudCode) {
-              case 0: newBaud = 9600; break;
-              case 1: newBaud = 14400; break;
-              case 2: newBaud = 19200; break;
-              case 3: newBaud = 38400; break;
-              case 4: newBaud = 56000; break;
-              case 5: newBaud = 57600; break;
-              case 6: newBaud = 115200; break;
-              case 7: newBaud = 2400; break;
-              case 8: newBaud = 4800; break;
-            }
-            
-            Serial.print("Baudrate code set to: ");
-            Serial.print(baudCode);
-            Serial.print(" (");
-            Serial.print(newBaud);
-            Serial.println(" bps)");
-            Serial.println("Please update your configuration and restart the device.");
-            
-            // Update the config
-            config.baudRate = newBaud;
-          } else {
-            Serial.println("Failed to set baudrate");
+        if (ps->setBaudRate(baudCode)) {
+          Serial.print("Baud rate code set to: ");
+          Serial.println(baudCode);
+          
+          long newBaud;
+          switch (baudCode) {
+            case 0: newBaud = 9600; break;
+            case 1: newBaud = 14400; break;
+            case 2: newBaud = 19200; break;
+            case 3: newBaud = 38400; break;
+            case 4: newBaud = 56000; break;
+            case 5: newBaud = 57600; break;
+            case 6: newBaud = 115200; break;
+            case 7: newBaud = 2400; break;
+            case 8: newBaud = 4800; break;
+            default: newBaud = 9600;
           }
+          
+          Serial.print("New baud rate will be: ");
+          Serial.print(newBaud);
+          Serial.println(" bps");
+          Serial.println("You must save settings and restart the device for this to take effect");
+          
+          // Update the local config too
+          config.baudRate = newBaud;
         } else {
-          Serial.println("Operation cancelled");
+          Serial.println("Failed to set baud rate");
         }
       } else {
-        Serial.println("Invalid baudrate code. Must be between 0 and 8.");
+        Serial.println("Invalid baud code. Must be between 0-8.");
       }
     }
+  } else if (input == "help") {
+    displaySettingsMenu();
+  } else if (input == "menu") {
+    setMenuState(MenuState::MAIN_MENU);
+    displayMainMenu();
   } else {
     Serial.println("Unknown command. Type 'help' for options.");
   }
@@ -277,63 +264,67 @@ void handleSettingsMenu(const String& input, XY_SKxxx* ps, XYModbusConfig& confi
 
 // Keep the existing displayDeviceSettings function for backward compatibility
 void displayDeviceSettings(XY_SKxxx* ps) {
-  Serial.println("\n==== Current Device Settings ====");
-  
-  // Display current slave address
-  uint8_t slaveAddr;
-  if (ps->getSlaveAddress(slaveAddr)) {
-    Serial.print("Modbus Slave Address: ");
-    Serial.println(slaveAddr);
-  } else {
-    Serial.println("Failed to read slave address");
+  if (!ps) {
+    Serial.println("Error: Power supply not initialized");
+    return;
   }
   
-  // Display current baudrate
-  uint8_t baudCode = ps->getBaudRateCode();
-  long actualBaud = ps->getActualBaudRate();
-  Serial.print("Baudrate: ");
-  Serial.print(baudCode);
-  if (actualBaud > 0) {
-    Serial.print(" (");
-    Serial.print(actualBaud);
-    Serial.println(" bps)");
-  } else {
-    Serial.println(" (Unknown)");
+  // Basic device settings
+  Serial.println("\n==== Device Settings ====");
+  
+  // Beeper status
+  bool beeperEnabled;
+  if (ps->getBeeper(beeperEnabled)) {
+    Serial.print("Beeper: ");
+    Serial.println(beeperEnabled ? "ENABLED" : "DISABLED");
+  }
+  
+  // Brightness
+  uint8_t brightness = ps->getBacklightBrightness();
+  if (brightness > 0) {
+    Serial.print("Display Brightness: ");
+    Serial.print(brightness);
+    Serial.println(" (1-5)");
+  }
+  
+  // Sleep timeout
+  uint8_t sleepTimeout = ps->getSleepTimeout();
+  if (sleepTimeout != 255) {
+    Serial.print("Sleep Timeout: ");
+    if (sleepTimeout == 0) {
+      Serial.println("Never");
+    } else {
+      Serial.print(sleepTimeout);
+      Serial.println(" minutes");
+    }
   }
 }
 
 // New comprehensive settings display function
 void displayAllDeviceSettings(XY_SKxxx* ps) {
-  Serial.println("\n==== All Device Settings ====");
-  
-  // Communication settings
-  uint8_t slaveAddr;
-  if (ps->getSlaveAddress(slaveAddr)) {
-    Serial.print("Modbus Slave Address: ");
-    Serial.println(slaveAddr);
-  } else {
-    Serial.println("Failed to read slave address");
+  if (!ps) {
+    Serial.println("Error: Power supply not initialized");
+    return;
   }
   
-  uint8_t baudCode = ps->getBaudRateCode();
-  long actualBaud = ps->getActualBaudRate();
-  Serial.print("Baudrate: ");
-  Serial.print(baudCode);
-  if (actualBaud > 0) {
-    Serial.print(" (");
-    Serial.print(actualBaud);
-    Serial.println(" bps)");
-  } else {
-    Serial.println(" (Unknown)");
+  Serial.println("\n===== All Device Settings =====");
+  
+  // Basic device settings
+  bool beeperEnabled;
+  if (ps->getBeeper(beeperEnabled)) {
+    Serial.print("Beeper: ");
+    Serial.println(beeperEnabled ? "ENABLED" : "DISABLED");
   }
   
   // Display settings
   uint8_t brightness = ps->getBacklightBrightness();
-  if (brightness <= 5) {
+  if (brightness > 0) {
     Serial.print("Display Brightness: ");
-    Serial.println(brightness);
+    Serial.print(brightness);
+    Serial.println(" (1-5)");
   }
   
+  // Sleep settings
   uint8_t sleepTimeout = ps->getSleepTimeout();
   if (sleepTimeout != 255) {
     Serial.print("Sleep Timeout: ");
@@ -358,7 +349,6 @@ void displayAllDeviceSettings(XY_SKxxx* ps) {
   Serial.println(keyLocked ? "LOCKED" : "UNLOCKED");
   
   // Beeper settings
-  bool beeperEnabled;
   if (ps->getBeeper(beeperEnabled)) {
     Serial.print("Beeper: ");
     Serial.println(beeperEnabled ? "ENABLED" : "DISABLED");

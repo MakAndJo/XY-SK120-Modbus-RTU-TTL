@@ -5,7 +5,8 @@
 #include "menu_protection.h"
 #include "menu_settings.h"
 #include "menu_debug.h"
-#include "menu_cd_data.h"  // Include the new header
+#include "menu_cd_data.h"
+#include "menu_wifi.h"  // Include the new WiFi menu header
 
 void displayMainMenu() {
   Serial.println("\n==== Main Menu ====");
@@ -14,7 +15,8 @@ void displayMainMenu() {
   Serial.println("3. Protection");
   Serial.println("4. Settings");
   Serial.println("5. Debug (Register R/W)");
-  Serial.println("6. CD Data Groups");  // Add the new menu option
+  Serial.println("6. CD Data Groups");
+  Serial.println("7. WiFi Settings");  // Add the new menu option
   Serial.println("status - Show power supply status");
   Serial.println("prot - Show protection settings and status");
   Serial.println("config - Show current configuration");
@@ -39,15 +41,18 @@ void handleMainMenu(const String& input, XY_SKxxx* ps, XYModbusConfig& config) {
   } else if (input == "5") {
     setMenuState(MenuState::DEBUG_MENU);
     displayDebugMenu();
-  } else if (input == "6") {  // Add handler for the new menu option
+  } else if (input == "6") {
     setMenuState(MenuState::CD_DATA_MENU);
     displayCDDataMenu();
+  } else if (input == "7") {  // Add handler for the new WiFi menu option
+    setMenuState(MenuState::WIFI_MENU);
+    displayWiFiMenu();
   } else if (input.equalsIgnoreCase("status")) {
     // Call the displayDeviceStatus function from serial_core.cpp
     displayDeviceStatus(ps);
   } else if (input.equalsIgnoreCase("config")) {
-    // Load and display the configuration
     displayConfig(config);
+    return;
   } else if (input.equalsIgnoreCase("help")) {
     displayMainMenu();
   } else if (input.equalsIgnoreCase("info")) {

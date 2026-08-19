@@ -4,11 +4,45 @@
 #include <Arduino.h>
 #include <Preferences.h>
 
-// Default hardware settings
-#define DEFAULT_MODBUS_RX_PIN D7     // Default RX pin (D7 on XIAO ESP32S3)
-#define DEFAULT_MODBUS_TX_PIN D6     // Default TX pin (D6 on XIAO ESP32S3)
+// Board-specific pin definitions
+#ifdef CONFIG_IDF_TARGET_ESP32S3
+    // XIAO ESP32S3 pin mapping
+    #define DEFAULT_MODBUS_RX_PIN D7     // Default RX pin (D7 on XIAO ESP32S3)
+    #define DEFAULT_MODBUS_TX_PIN D6     // Default TX pin (D6 on XIAO ESP32S3)
+    #define DEFAULT_WIFI_RESET_PIN D0    // WiFi reset button pin
+    #define BOARD_LED_PIN D10            // Built-in LED
+#elif defined(CONFIG_IDF_TARGET_ESP32C3)
+    // XIAO ESP32C3 pin mapping (using safe GPIO pins)
+    #define DEFAULT_MODBUS_RX_PIN 4      // GPIO4 (D2 equivalent)
+    #define DEFAULT_MODBUS_TX_PIN 5      // GPIO5 (D3 equivalent)
+    #define DEFAULT_WIFI_RESET_PIN 9     // GPIO9 (avoid GPIO0 - strapping pin)
+    #define BOARD_LED_PIN 8              // Built-in RGB LED data pin
+#else
+    // Fallback for unknown ESP32 variants
+    #define DEFAULT_MODBUS_RX_PIN 7      // Standard GPIO pins
+    #define DEFAULT_MODBUS_TX_PIN 6
+    #define DEFAULT_WIFI_RESET_PIN 0
+    #define BOARD_LED_PIN 2
+#endif
+
+// Common configuration
 #define DEFAULT_MODBUS_SLAVE_ID 1    // Default Modbus slave ID
 #define DEFAULT_MODBUS_BAUD_RATE 115200  // Default baud rate
+
+// Memory constraints based on board
+#ifdef CONFIG_IDF_TARGET_ESP32C3
+    #define MAX_CONFIG_SIZE 512          // Smaller config for limited flash
+    #define MAX_WIFI_NETWORKS 3          // Reduce stored networks
+    #define WEB_SERVER_TIMEOUT 5000      // Shorter timeouts
+    #define MODBUS_BUFFER_SIZE 64        // Smaller buffers
+    #define MIN_FREE_HEAP 50000          // Minimum heap threshold
+#else
+    #define MAX_CONFIG_SIZE 2048
+    #define MAX_WIFI_NETWORKS 10
+    #define WEB_SERVER_TIMEOUT 30000
+    #define MODBUS_BUFFER_SIZE 256
+    #define MIN_FREE_HEAP 30000
+#endif
 
 // NVS namespace for storing settings
 #define PREFS_NAMESPACE "xysk120"

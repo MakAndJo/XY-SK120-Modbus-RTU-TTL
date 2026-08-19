@@ -24,7 +24,7 @@ void handleProtectionMenu(const String& input, XY_SKxxx* ps) {
     Serial.println("Error: Power supply not initialized");
     return;
   }
-  
+
   if (input == "get") {
     // Display all protection settings
     displayDeviceProtectionStatus(ps);
@@ -86,9 +86,9 @@ void handleProtectionMenu(const String& input, XY_SKxxx* ps) {
   } else if (input == "status") {
     // Read protection settings
     float ovp, ocp, opp, otp;
-    
+
     Serial.println("\n==== Protection Settings ====");
-    
+
     if (ps->getOverVoltageProtection(ovp)) {
       Serial.print("Over Voltage Protection: ");
       Serial.print(ovp, 2);
@@ -96,7 +96,7 @@ void handleProtectionMenu(const String& input, XY_SKxxx* ps) {
     } else {
       Serial.println("Failed to read OVP value");
     }
-    
+
     if (ps->getOverCurrentProtection(ocp)) {
       Serial.print("Over Current Protection: ");
       Serial.print(ocp, 3);
@@ -104,7 +104,7 @@ void handleProtectionMenu(const String& input, XY_SKxxx* ps) {
     } else {
       Serial.println("Failed to read OCP value");
     }
-    
+
     if (ps->getOverPowerProtection(opp)) {
       Serial.print("Over Power Protection: ");
       Serial.print(opp, 2);
@@ -112,7 +112,7 @@ void handleProtectionMenu(const String& input, XY_SKxxx* ps) {
     } else {
       Serial.println("Failed to read OPP value");
     }
-    
+
     if (ps->getOverTemperatureProtection(otp)) {
       Serial.print("Over Temperature Protection: ");
       Serial.print(otp, 1);
@@ -120,25 +120,25 @@ void handleProtectionMenu(const String& input, XY_SKxxx* ps) {
     } else {
       Serial.println("Failed to read OTP value");
     }
-    
+
     // Check for triggered protections
     uint8_t protStatus = ps->getProtectionStatus();
     Serial.println("\n==== Protection Status ====");
     Serial.print("OVP triggered: ");
     Serial.println((protStatus & 0x01) ? "YES" : "NO");
-    
+
     Serial.print("OCP triggered: ");
     Serial.println((protStatus & 0x02) ? "YES" : "NO");
-    
+
     Serial.print("OPP triggered: ");
     Serial.println((protStatus & 0x04) ? "YES" : "NO");
-    
+
     Serial.print("OTP triggered: ");
     Serial.println((protStatus & 0x08) ? "YES" : "NO");
   } else if (input == "clear") {
     // Since clearProtection doesn't exist, we'll try to write to a register
     // that might clear protections (this is a guess)
-    if (ps->writeRegister(0x2001, 0x0001)) {
+    if (ps->writeRegister(REG_PROTECT, 0x0000)) {
       Serial.println("Protection clear command sent");
     } else {
       Serial.println("Failed to clear protection triggers");
@@ -179,9 +179,9 @@ void handleProtectionMenu(const String& input, XY_SKxxx* ps) {
 void displayDeviceProtectionStatus(XY_SKxxx* ps) {
   // Display all protection settings
   float ovp, ocp, opp, otp;
-  
+
   Serial.println("\n==== Protection Settings ====");
-  
+
   if (ps->getOverVoltageProtection(ovp)) {
     Serial.print("Over Voltage Protection: ");
     Serial.print(ovp, 2);
@@ -189,7 +189,7 @@ void displayDeviceProtectionStatus(XY_SKxxx* ps) {
   } else {
     Serial.println("Failed to read OVP value");
   }
-  
+
   if (ps->getOverCurrentProtection(ocp)) {
     Serial.print("Over Current Protection: ");
     Serial.print(ocp, 3);
@@ -197,7 +197,7 @@ void displayDeviceProtectionStatus(XY_SKxxx* ps) {
   } else {
     Serial.println("Failed to read OCP value");
   }
-  
+
   if (ps->getOverPowerProtection(opp)) {
     Serial.print("Over Power Protection: ");
     Serial.print(opp, 2);
@@ -205,7 +205,7 @@ void displayDeviceProtectionStatus(XY_SKxxx* ps) {
   } else {
     Serial.println("Failed to read OPP value");
   }
-  
+
   if (ps->getOverTemperatureProtection(otp)) {
     Serial.print("Over Temperature Protection: ");
     Serial.print(otp, 1);
@@ -213,7 +213,7 @@ void displayDeviceProtectionStatus(XY_SKxxx* ps) {
   } else {
     Serial.println("Failed to read OTP value");
   }
-  
+
   // Add battery cutoff current display
   float btf;
   if (ps->getBatteryCutoffCurrent(btf)) {
@@ -227,19 +227,19 @@ void displayDeviceProtectionStatus(XY_SKxxx* ps) {
   } else {
     Serial.println("Battery cutoff current: FAILED TO READ");
   }
-  
+
   // Check for triggered protections
   uint8_t protStatus = ps->getProtectionStatus();
   Serial.println("\n==== Protection Status ====");
   Serial.print("OVP triggered: ");
   Serial.println((protStatus & 0x01) ? "YES" : "NO");
-  
+
   Serial.print("OCP triggered: ");
   Serial.println((protStatus & 0x02) ? "YES" : "NO");
-  
+
   Serial.print("OPP triggered: ");
   Serial.println((protStatus & 0x04) ? "YES" : "NO");
-  
+
   Serial.print("OTP triggered: ");
   Serial.println((protStatus & 0x08) ? "YES" : "NO");
 }

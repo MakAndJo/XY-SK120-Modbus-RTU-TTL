@@ -23,4 +23,7 @@ void setupSerialMonitorControl();
 // Check for input on the serial monitor
 void checkSerialMonitorInput(XY_SKxxx* powerSupply, XYModbusConfig &config);
 
+// Function to handle WiFi settings commands
+void handleWifiSettingsCommands();
+
 #endif // SERIAL_MONITOR_INTERFACE_H

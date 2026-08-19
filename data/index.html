@@ -1,765 +1,215 @@
 <!DOCTYPE html>
-<html lang="en" class="h-full">
+<html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>XY-SK120 Power Supply Control</title>
-    
-    <!-- Meta theme color for browsers -->
-    <meta id="theme-color" name="theme-color" content="#2c3e50">
-    
-    <!-- Splash screen styles moved to <head> for immediate application -->
-    <style>
-        #splash-screen {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: #ffffff;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            z-index: 9999;
-            transition: opacity 0.5s ease-out, visibility 0.5s ease-out;
-            opacity: 1; /* Start visible */
-        }
-        
-        .dark #splash-screen {
-            background-color: #111827;
-        }
-        
-        .splash-logo {
-            width: 120px;
-            height: 120px;
-            margin-bottom: 20px;
-        }
-        
-        .splash-title {
-            font-size: 24px;
-            font-weight: bold;
-            margin-bottom: 16px;
-            color: #2563eb;
-        }
-        
-        .dark .splash-title {
-            color: #3b82f6;
-        }
-        
-        .splash-spinner {
-            width: 40px;
-            height: 40px;
-            border: 4px solid rgba(0, 0, 0, 0.1);
-            border-left-color: #2563eb;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-        
-        .dark .splash-spinner {
-            border: 4px solid rgba(255, 255, 255, 0.1);
-            border-left-color: #3b82f6;
-        }
-        
-        .splash-status {
-            margin-top: 16px;
-            font-size: 14px;
-            color: #6b7280;
-        }
-        
-        .dark .splash-status {
-            color: #9ca3af;
-        }
-        
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-        
-        .splash-hidden {
-            opacity: 0;
-            visibility: hidden;
-        }
-
-        /* Fallback animations if anime.js fails to load */
-        .fallback-fade-in {
-            animation: simpleFadeIn 1s ease forwards;
-        }
-        
-        .fallback-progress {
-            animation: progressGrow 3s ease-in-out forwards;
-        }
-        
-        @keyframes simpleFadeIn {
-            from { opacity: 0; transform: scale(0.9); }
-            to { opacity: 1; transform: scale(1); }
-        }
-        
-        @keyframes simpleFadeOut {
-            from { opacity: 1; transform: scale(1); }
-            to { opacity: 0; transform: scale(1.05); }
-        }
-        
-        @keyframes progressGrow {
-            from { width: 0%; }
-            to { width: 100%; }
-        }
-    </style>
-    
-    <!-- Immediate splash screen display - Critical for preventing FOUC -->
-    <script>
-        // Create splash screen immediately before DOM is even parsed
-        document.write(`
-            <div id="splash-screen" class="fixed inset-0 flex flex-col items-center justify-center bg-white dark:bg-gray-900 z-50">
-                <div class="relative w-48 h-48 mb-6">
-                    <svg id="bolt-icon" class="w-full h-full" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <defs>
-                            <linearGradient id="boltGradient" x1="0.5" y1="0" x2="0.5" y2="1">
-                                <stop offset="0.37" stop-color="#64ff00"/>
-                                <stop offset="0.65" stop-color="#fff500"/>
-                            </linearGradient>
-                        </defs>
-                        <path id="bolt-path" d="M38.973,4.253C39.777,4.701,40.172,5.638,39.931,6.525L34.619,26.000L54.000,26.000C54.797,26.000,55.517,26.473,55.834,27.203C56.152,27.934,56.005,28.783,55.461,29.365L27.461,59.365C26.834,60.039,25.827,60.197,25.023,59.749C24.219,59.300,23.825,58.360,24.069,57.472L29.381,38.000L10.000,38.000C9.203,38.000,8.483,37.527,8.166,36.797C7.848,36.066,7.995,35.217,8.539,34.635L36.539,4.635C37.166,3.963,38.171,3.806,38.973,4.253Z" 
-                              fill="url(#boltGradient)" stroke="#b73dff" stroke-width="1.5"/>
-                    </svg>
-                </div>
-                <h1 class="text-2xl font-bold mb-4 text-blue-500 dark:text-blue-400">XY-SK120 <span class="text-yellow-500">Power Supply</span></h1>
-                <div class="w-64 bg-gray-200 dark:bg-gray-700 rounded-full h-2 mb-2">
-                    <div id="progress-bar" class="bg-gradient-to-r from-green-400 to-blue-500 h-2 rounded-full" style="width: 0%"></div>
-                </div>
-                <p id="splash-status" class="text-sm text-gray-500 dark:text-gray-400">Loading application...</p>
-            </div>
-        `);
-    </script>
-    
-    <!-- Theme initialization script - after splash screen -->
-    <script>
-      // Apply theme immediately to prevent flash of wrong theme
-      (function() {
-        // Feature detection for localStorage
-        const hasStorage = (function() {
-          try {
-            localStorage.setItem('test', 'test');
-            localStorage.removeItem('test');
-            return true;
-          } catch (e) {
-            return false;
-          }
-        })();
-        
-        // Determine theme preference
-        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        const savedTheme = hasStorage ? localStorage.getItem('theme') : null;
-        const isDark = savedTheme === 'dark' || (!savedTheme && prefersDark);
-        
-        // Apply theme class
-        if (isDark) {
-          document.documentElement.classList.add('dark');
-          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#111827');
-        } else {
-          document.documentElement.classList.remove('dark');
-          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff');
-        }
-      })();
-    </script>
-    
-    <!-- anime.js - Animation library needs to be loaded as a regular script first -->
-    <script src="js/lib/anime.min.js"></script>
-    
-    <!-- Only load splash_animation.js - which has the circles animation -->
-    <script src="js/splash_animation.js"></script>
-    
-    <!-- CSS files loaded after splash is displayed -->
-    <link rel="stylesheet" href="css/tailwind.css">
-    <link rel="stylesheet" href="css/components.css">
-    <link rel="stylesheet" href="css/colors.css">
-    <link rel="stylesheet" href="css/log-viewer.css">
-    <link rel="stylesheet" href="css/custom.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>XY PSU</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
 </head>
-<body class="bg-gray-100 dark:bg-gray-900 h-full transition-colors duration-200">
-    <!-- Component: Splash Screen (hidden, will replace the inline one) -->
-    <div id="splash-screen-container" data-component="splash-screen" class="hidden"></div>
-
-    <div class="min-h-full flex flex-col">
-        <!-- Component: Top Navigation Bar -->
-        <div id="navbar" data-component="navbar"></div>
-        
-        <!-- Main Content -->
-        <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 bg-gray-100 dark:bg-gray-900">
-            <!-- Component: Power Supply Readings Card -->
-            <div id="power-supply-readings" data-component="power-supply-readings"></div>
-            
-            <!-- Main content sections -->
-            <div class="space-y-6">
-                <!-- Component: Basic Controls Card -->
-                <div id="basic-controls" data-component="basic-controls"></div>
-                
-                <!-- Operating Mode Controls Card - Icon alignment fixed -->
-                <div class="card operating-mode-card">
-                    <div class="card-header">
-                        <h2 class="card-title text-gray-700 dark:text-white">
-                            <svg class="card-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M18 20V10"></path>
-                                <path d="M12 20V4"></path>
-                                <path d="M6 20v-6"></path>
-                            </svg>
-                            <span>Operating Mode</span>
-                        </h2>
-                    </div>
-                    <!-- Mode tabs - updated to follow Meraki UI "Line with Icons" pattern -->
-                    <div class="border-b border-gray-200 dark:border-gray-700">
-                        <nav class="flex overflow-x-auto overflow-y-hidden whitespace-nowrap">
-                            <button data-mode="cv" class="inline-flex items-center h-10 px-2 py-2 -mb-px text-center text-gray-700 bg-transparent border-b-2 border-transparent sm:px-4 dark:text-white whitespace-nowrap focus:outline-none hover:border-gray-400 dark:hover:border-gray-500">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 mx-1 sm:w-6 sm:h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                                </svg>
-                                <span class="mx-1 text-sm sm:text-base">
-                                    <span class="font-medium">CV</span> <span class="hidden sm:inline">- Constant Voltage</span>
-                                </span>
-                            </button>
-                            <button data-mode="cc" class="inline-flex items-center h-10 px-2 py-2 -mb-px text-center text-gray-700 bg-transparent border-b-2 border-transparent sm:px-4 dark:text-white whitespace-nowrap focus:outline-none hover:border-gray-400 dark:hover:border-gray-500">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 mx-1 sm:w-6 sm:h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                </svg>
-                                <span class="mx-1 text-sm sm:text-base">
-                                    <span class="font-medium">CC</span> <span class="hidden sm:inline">- Constant Current</span>
-                                </span>
-                            </button>
-                            <button data-mode="cp" class="inline-flex items-center h-10 px-2 py-2 -mb-px text-center text-gray-700 bg-transparent border-b-2 border-transparent sm:px-4 dark:text-white whitespace-nowrap focus:outline-none hover:border-gray-400 dark:hover:border-gray-500">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 mx-1 sm:w-6 sm:h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-                                </svg>
-                                <span class="mx-1 text-sm sm:text-base">
-                                    <span class="font-medium">CP</span> <span class="hidden sm:inline">- Constant Power</span>
-                                </span>
-                            </button>
-                        </nav>
-                    </div>
-                    
-                    <!-- Tab Content Container -->
-                    <div class="tab-content">
-                        <!-- CV Settings -->
-                        <div id="cv-settings" class="mode-settings px-4 py-5 sm:p-6 block">
-                            <div class="max-w-lg mx-auto">
-                                <div class="mt-1 relative rounded-md shadow-sm">
-                                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                        <span class="text-gray-500 dark:text-gray-400 sm:text-sm">V</span>
-                                    </div>
-                                    <input type="number" id="set-cv-voltage" min="0" max="30" step="0.1" class="appearance-none block w-full pl-10 pr-12 py-3 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md focus:ring-secondary focus:border-secondary">
-                                    <div class="absolute inset-y-0 right-0 flex items-center">
-                                        <button id="apply-cv" class="inline-flex items-center h-full px-4 py-2 border border-transparent text-sm font-medium rounded-r-md text-white bg-secondary hover:bg-opacity-90 focus:outline-none">
-                                            Set CV Mode
-                                        </button>
-                                    </div>
-                                </div>
-                                <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">Set the constant voltage value between 0-30V</p>
-                            </div>
-                        </div>
-                        
-                        <!-- CC Settings -->
-                        <div id="cc-settings" class="mode-settings px-4 py-5 sm:p-6 hidden">
-                            <div class="max-w-lg mx-auto">
-                                <div class="mt-1 relative rounded-md shadow-sm">
-                                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                        <span class="text-gray-500 dark:text-gray-400 sm:text-sm">A</span>
-                                    </div>
-                                    <input type="number" id="set-cc-current" min="0" max="5" step="0.01" class="appearance-none block w-full pl-10 pr-12 py-3 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md focus:ring-secondary focus:border-secondary">
-                                    <div class="absolute inset-y-0 right-0 flex items-center">
-                                        <button id="apply-cc" class="inline-flex items-center h-full px-4 py-2 border border-transparent text-sm font-medium rounded-r-md text-white bg-secondary hover:bg-opacity-90 focus:outline-none">
-                                            Set CC Mode
-                                        </button>
-                                    </div>
-                                </div>
-                                <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">Set the constant current value between 0-5A</p>
-                            </div>
-                        </div>
-                        
-                        <!-- CP Settings -->
-                        <div id="cp-settings" class="mode-settings px-4 py-5 sm:p-6 hidden">
-                            <div class="max-w-lg mx-auto space-y-6">
-                                <div class="mt-1 relative rounded-md shadow-sm">
-                                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                        <span class="text-gray-500 dark:text-gray-400 sm:text-sm">W</span>
-                                    </div>
-                                    <input type="number" inputmode="decimal" id="set-cp-power" min="0" max="120" step="0.1" class="appearance-none block w-full pl-10 pr-12 py-3 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md focus:ring-secondary focus:border-secondary">
-                                    <div class="absolute inset-y-0 right-0 flex items-center">
-                                        <button id="apply-cp" class="inline-flex items-center h-full px-4 py-2 border border-transparent text-sm font-medium rounded-r-md text-white bg-secondary hover:bg-opacity-90 focus:outline-none">
-                                            Set CP Mode
-                                        </button>
-                                    </div>
-                                </div>
-                                <div class="flex items-center justify-between">
-                                    <span class="block text-sm font-medium text-gray-700 dark:text-gray-300">CP Mode Control</span>
-                                    <label class="toggle-switch">
-                                        <input type="checkbox" id="cp-mode-toggle">
-                                        <span class="slider"></span>
-                                    </label>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- Settings Card - Icon alignment fixed -->
-                <div class="card settings-card">
-                    <div class="card-header">
-                        <h2 class="card-title text-gray-700 dark:text-white">
-                            <svg class="card-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path>
-                                <circle cx="12" cy="12" r="3"></circle>
-                            </svg>
-                            <span>Settings</span>
-                        </h2>
-                    </div>
-                    
-                    <!-- Settings tabs - Updated with Meraki UI "Line with Icons" style -->
-                    <div id="settings-tabs-container" data-tabs="settings">
-                        <div class="flex overflow-x-auto overflow-y-hidden border-b border-gray-200 whitespace-nowrap dark:border-gray-700" role="tablist" id="settings-tablist" aria-label="Settings tabs">
-                            <button id="tab-device" role="tab" aria-selected="false" aria-controls="device-settings-tab" 
-                                class="inline-flex items-center h-10 px-2 py-2 -mb-px text-center text-gray-700 bg-transparent border-b-2 border-transparent sm:px-4 dark:text-white whitespace-nowrap focus:outline-none hover:border-gray-400">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 mx-1 sm:w-6 sm:h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
-                                </svg>
-                                <span class="mx-1 text-sm sm:text-base">
-                                    Device
-                                </span>
-                            </button>
-                            <button id="tab-ui" role="tab" aria-selected="false" aria-controls="ui-settings-tab" 
-                                class="inline-flex items-center h-10 px-2 py-2 -mb-px text-center text-gray-700 bg-transparent border-b-2 border-transparent sm:px-4 dark:text-white whitespace-nowrap focus:outline-none hover:border-gray-400">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 mx-1 sm:w-6 sm:h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
-                                </svg>
-                                <span class="mx-1 text-sm sm:text-base">
-                                    Web UI
-                                </span>
-                            </button>
-                            <button id="tab-wifi" role="tab" aria-selected="true" aria-controls="wifi-settings-tab" 
-                                class="inline-flex items-center h-10 px-2 py-2 -mb-px text-center text-blue-600 bg-transparent border-b-2 border-blue-500 sm:px-4 dark:text-blue-300 dark:border-blue-400 whitespace-nowrap focus:outline-none">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 mx-1 sm:w-6 sm:h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0" />
-                                </svg>
-                                <span class="mx-1 text-sm sm:text-base">
-                                    WiFi
-                                </span>
-                            </button>
-                            <button id="tab-manager" role="tab" aria-selected="false" aria-controls="manager-settings-tab" 
-                                class="inline-flex items-center h-10 px-2 py-2 -mb-px text-center text-gray-700 bg-transparent border-b-2 border-transparent sm:px-4 dark:text-white whitespace-nowrap focus:outline-none hover:border-gray-400">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 mx-1 sm:w-6 sm:h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                                </svg>
-                                <span class="mx-1 text-sm sm:text-base">
-                                    Links
-                                </span>
-                            </button>
-                        </div>
-                        
-                        <!-- Tab panel content remains the same, just add ARIA attributes -->
-                        <div id="wifi-settings-tab" role="tabpanel" aria-labelledby="tab-wifi" tabindex="0" aria-hidden="false" class="settings-panel px-4 py-5 sm:p-6">
-                            <!-- Existing Wi-Fi settings content -->
-                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
-                                <div class="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
-                                    <p class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Status</p>
-                                    <p id="wifi-status" class="text-lg font-semibold text-gray-700 dark:text-gray-200">--</p>
-                                </div>
-                                <div class="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
-                                    <p class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">SSID</p>
-                                    <p id="wifi-ssid" class="text-lg font-semibold text-gray-700 dark:text-gray-200 truncate">--</p>
-                                </div>
-                                <div class="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
-                                    <p class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">IP</p>
-                                    <p id="wifi-ip" class="text-lg font-semibold text-gray-700 dark:text-gray-200">--</p>
-                                </div>
-                            </div>
-                            <div class="mt-6 flex justify-end">
-                                <button id="wifi-refresh-btn" onclick="fetchWifiStatus()" class="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none">
-                                    <svg class="h-4 w-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-                                    </svg>
-                                    Refresh WiFi Status
-                                </button>
-                                <button id="wifi-reset-btn" onclick="resetWifiSettings()" class="ml-3 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-danger hover:bg-opacity-90 focus:outline-none">
-                                    <svg class="h-4 w-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 14l9-5-9-5-9 5 9-5m0 0l9-5-9 5-9 5 9 5m0 0v8"></path>
-                                    </svg>
-                                    Reset WiFi
-                                </button>
-                            </div>
-                        </div>
-                        
-                        <div id="device-settings-tab" role="tabpanel" aria-labelledby="tab-device" tabindex="0" aria-hidden="true" class="settings-panel px-4 py-5 sm:p-6 hidden">
-                            <!-- Existing device settings content -->
-                            <div class="max-w-lg mx-auto space-y-6">
-                                <div>
-                                    <label for="device-name" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Device Name</label>
-                                    <input type="text" id="device-name" class="mt-1 block w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-secondary focus:border-secondary">
-                                </div>
-                                
-                                <!-- Add Time Zone Setting -->
-                                <div>
-                                    <label for="timezone-select" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Time Zone</label>
-                                    <div class="mt-1 relative rounded-md shadow-sm">
-                                        <input 
-                                            type="text" 
-                                            id="timezone-search" 
-                                            class="form-input block w-full pl-3 pr-10 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" 
-                                            placeholder="Search for a city or timezone..."
-                                            autocomplete="off"
-                                        >
-                                        <div id="timezone-dropdown" class="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 shadow-lg rounded-md border border-gray-300 dark:border-gray-600 max-h-60 overflow-y-auto hidden">
-                                            <!-- Options will be populated by JavaScript -->
-                                        </div>
-                                    </div>
-                                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                                        Current: <span id="current-timezone">UTC</span>
-                                    </p>
-                                </div>
-                                
-                                <div>
-                                    <label for="modbus-id" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Modbus ID</label>
-                                    <select id="modbus-id" class="mt-1 block w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-secondary focus:border-secondary">
-                                        <option value="1">1</option>
-                                        <option value="2">2</option>
-                                        <option value="3">3</option>
-                                        <option value="4">4</option>
-                                        <option value="5">5</option>
-                                    </select>
-                                </div>
-                                
-                                <div>
-                                    <label for="baudrate" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Baud Rate</label>
-                                    <select id="baudrate" class="mt-1 block w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-secondary focus:border-secondary">
-                                        <option value="9600">9600</option>
-                                        <option value="19200">19200</option>
-                                        <option value="38400">38400</option>
-                                        <option value="57600">57600</option>
-                                        <option value="115200">115200</option>
-                                    </select>
-                                </div>
-                                
-                                <div>
-                                    <label for="update-interval" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Update Interval (ms)</label>
-                                    <input type="number" id="update-interval" min="500" max="10000" step="100" class="mt-1 block w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-secondary focus:border-secondary">
-                                </div>
-                                
-                                <div class="flex justify-end pt-4">
-                                    <button id="save-device-settings" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-secondary hover:bg-opacity-90 focus:outline-none">
-                                        Save Device Settings
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div id="ui-settings-tab" role="tabpanel" aria-labelledby="tab-ui" tabindex="0" aria-hidden="true" class="settings-panel px-4 py-5 sm:p-6 hidden">
-                            <!-- Existing UI settings content -->
-                            <div class="max-w-lg mx-auto space-y-6">
-                                <div class="flex items-center justify-between">
-                                    <span class="block text-sm font-medium text-gray-700 dark:text-gray-300">Dark Mode</span>
-                                    <label class="toggle-switch">
-                                        <!-- Make sure this is a complete toggle switch with ID -->
-                                        <input type="checkbox" id="dark-mode-toggle">
-                                        <span class="slider"></span>
-                                    </label>
-                                </div>
-                                
-                                <div class="flex items-center justify-between">
-                                    <span class="block text-sm font-medium text-gray-700 dark:text-gray-300">Auto-refresh Status</span>
-                                    <label class="toggle-switch">
-                                        <input type="checkbox" id="auto-refresh-toggle" checked>
-                                        <span class="slider"></span>
-                                    </label>
-                                </div>
-                                
-                                <div>
-                                    <label for="refresh-interval" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Refresh Interval (seconds)</label>
-                                    <select id="refresh-interval" class="mt-1 block w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-secondary focus:border-secondary">
-                                        <option value="1">1 second</option>
-                                        <option value="2">2 seconds</option>
-                                        <option value="5" selected>5 seconds</option>
-                                        <option value="10">10 seconds</option>
-                                        <option value="30">30 seconds</option>
-                                    </select>
-                                </div>
-                                
-                                <div class="flex justify-end pt-4">
-                                    <button id="save-ui-settings" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-secondary hover:bg-opacity-90 focus:outline-none">
-                                        Save UI Settings
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div id="manager-settings-tab" role="tabpanel" aria-labelledby="tab-manager" tabindex="0" aria-hidden="true" class="settings-panel px-4 py-5 sm:p-6 hidden">
-                            <!-- Existing manager settings content -->
-                            <form id="add-device-form" class="space-y-4">
-                                <div>
-                                    <label for="new-device-ip" class="block text-sm font-medium text-gray-700 dark:text-gray-300">IP Address</label>
-                                    <input type="text" id="new-device-ip" placeholder="192.168.1.100" required class="appearance-none mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md shadow-sm focus:outline-none focus:ring-secondary focus:border-secondary">
-                                </div>
-                                <div>
-                                    <label for="new-device-name" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Name (optional)</label>
-                                    <input type="text" id="new-device-name" placeholder="My Power Supply" class="appearance-none mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md shadow-sm focus:outline-none focus:ring-secondary focus:border-secondary">
-                                </div>
-                                <div class="flex justify-end">
-                                    <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-secondary hover:bg-opacity-90 focus:outline-none">
-                                        Add Device
-                                    </button>
-                                </div>
-                                
-                                <div class="mt-6">
-                                    <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Saved Devices</h3>
-                                    <div id="saved-devices-list" class="border border-gray-200 dark:border-gray-700 rounded-md overflow-hidden">
-                                        <!-- Saved devices will be listed here dynamically -->
-                                        <div class="p-4 text-sm text-gray-500 dark:text-gray-400">Loading saved devices...</div>
-                                    </div>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </main>
-        
-        <!-- Component: Footer -->
-        <div id="footer" data-component="footer"></div>
+<body>
+  <header>
+    <div class="header-row">
+      <h1><span id="deviceName">XY PSU</span></h1>
+      <div class="device-bar row">
+        <div class="row">
+          <span id="conn"></span>
+          <span id="connText">offline</span>
+        </div>
+        <select id="deviceSelect" class="device-select"></select>
+      </div>
     </div>
-    
-    <!-- Component: Log Viewer -->
-    <div id="log-viewer" data-component="log-viewer"></div>
-    
-    <!-- Initialize splash animations immediately -->
-    <script>
-        // Track when the splash screen was first shown - immediately
-        window.splashStartTime = Date.now();
-        window.splashMinDisplayTime = 3000; // 3 seconds minimum display
-        
-        // Immediately start simple animation for the bolt
-        document.addEventListener('DOMContentLoaded', function() {
-            if (typeof anime !== 'undefined') {
-                // Simple initial animation
-                anime({
-                    targets: '#bolt-path',
-                    opacity: [0.7, 1],
-                    easing: 'easeInOutSine',
-                    duration: 800
-                });
-                
-                // Simple progress animation
-                anime({
-                    targets: '#progress-bar',
-                    width: ['0%', '30%'],
-                    easing: 'easeInOutQuad',
-                    duration: 1000
-                });
-            }
-        });
+  </header>
 
-        // Track loading state
-        window.appLoadingState = {
-            componentsLoaded: false,
-            coreScriptsLoaded: false,
-            connectionEstablished: false
-        };
-        
-        // Update splash screen status
-        function updateSplashStatus(message) {
-            const statusEl = document.getElementById('splash-status');
-            if (statusEl) {
-                statusEl.textContent = message;
-            }
-        }
-        
-        // Hide splash screen when everything is ready
-        function hideSplashScreen() {
-            // Check if all critical components are loaded
-            if (window.appLoadingState.componentsLoaded && 
-                window.appLoadingState.coreScriptsLoaded) {
-                
-                updateSplashStatus("Application ready!");
-                
-                // Add a slight delay before hiding the splash screen
-                setTimeout(() => {
-                    const splashScreen = document.getElementById('splash-screen');
-                    if (splashScreen) {
-                        splashScreen.classList.add('opacity-0');
-                        setTimeout(() => {
-                            splashScreen.classList.add('hidden');
-                        }, 500);
-                    }
-                }, 500);
-            }
-        }
-        
-        // Define placeholder functions to prevent errors
-        if (!window.startAutoRefresh) {
-            window.startAutoRefresh = function initialPlaceholder() {
-                console.log("Initial placeholder auto-refresh called");
-            };
-        }
-        
-        if (!window.stopAutoRefresh) {
-            window.stopAutoRefresh = function initialPlaceholderStop() {};
-        }
-        
-        // Wait for components to load before running functionality
-        document.addEventListener('components-loaded', function() {
-            console.log('All components loaded, ready for final initialization');
-            updateSplashStatus("UI components loaded");
-            window.appLoadingState.componentsLoaded = true;
-            hideSplashScreen();
-        });
-        
-        // Listen for WebSocket connection
-        document.addEventListener('websocket-connected', function() {
-            updateSplashStatus("Connected to device");
-            window.appLoadingState.connectionEstablished = true;
-        });
-    </script>
+  <main>
+    <!-- Tab: Главная -->
+    <tab id="page-main" class="tabpage">
+      <section class="card" id="live" style="user-select: none;">
+        <div class="row">
+          <div class="col big" style="flex: 1;margin: -6px 0;">
+            <div class="val"><output id="voltage">--</output></div>
+            <div class="val"><output id="current">--</output></div>
+            <div class="val"><output id="power">--</output></div>
+          </div>
+          <div class="col control">
+            <div class="col">
+              <div class="val"><output id="internalTemp" style="font-size: 1.8em;">--</output></div>
+              <div class="val"><output id="mode" class="cv" style="font-size: 3em;">--</output></div>
+            </div>
+            <div class="row live-controls">
+              <button id="keyLock" class="btn btn-sm btn-warning" style="margin-left:auto">🔒</button>
+              <button id="outBtn" class="btn btn-success">ВКЛ</button>
+            </div>
+          </div>
+        </div>
+      </section>
 
-    <!-- JavaScript files - Fix loading order and prevent duplicates -->
-    <script>
-        // Immediately start simple animation for the bolt
-        document.addEventListener('DOMContentLoaded', function() {
-            if (typeof anime !== 'undefined') {
-                // Simple initial animation
-                anime({
-                    targets: '#bolt-path',
-                    opacity: [0, 1],
-                    easing: 'easeInOutSine',
-                    duration: 800
-                });
-                
-                // Simple progress animation
-                anime({
-                    targets: '#progress-bar',
-                    width: ['0%', '30%'],
-                    easing: 'easeInOutQuad',
-                    duration: 1000
-                });
-            }
-        });
+      <section class="card">
+        <div class="row wrap">
+          <div class="col">
+            <!-- <label for="vIn">Напряжение</label> -->
+            <div class="input-wrap">
+              <input id="vIn" type="number" step="0.01" min="0" max="150" placeholder="0.00">
+              <span class="suffix">V</span>
+            </div>
+            <div class="row">
+              <button id="vMinus" class="btn btn-sm btn-ghost">−</button>
+              <button id="vPlus" class="btn btn-sm btn-ghost">+</button>
+            </div>
+          </div>
+          <div class="col" id="iCol">
+            <!-- <label for="iIn">Ток</label> -->
+            <div class="input-wrap">
+              <input id="iIn" type="number" step="0.001" min="0" max="65" placeholder="0.000">
+              <span class="suffix">A</span>
+            </div>
+            <div class="row">
+              <button id="iMinus" class="btn btn-sm btn-ghost">−</button>
+              <button id="iPlus" class="btn btn-sm btn-ghost">+</button>
+            </div>
+          </div>
+          <div class="col" id="pCol">
+            <!-- <label for="pIn">Мощность</label> -->
+            <div class="input-wrap">
+              <input id="pIn" type="number" step="0.1" min="0" max="150" placeholder="0.0">
+              <span class="suffix">W</span>
+            </div>
+            <div class="row">
+              <button id="pMinus" class="btn btn-sm btn-ghost">−</button>
+              <button id="pPlus" class="btn btn-sm btn-ghost">+</button>
+            </div>
+          </div>
+        </div>
+        <div class="row">
+          <select class="memgroup-sel"><option value="0">M0</option><option value="1">M1</option><option value="2">M2</option><option value="3">M3</option><option value="4">M4</option><option value="5">M5</option><option value="6">M6</option><option value="7">M7</option><option value="8">M8</option><option value="9">M9</option></select>
+        </div>
+      </section>
 
-        // Track loading state
-        window.appLoadingState = {
-            componentsLoaded: false,
-            coreScriptsLoaded: false,
-            connectionEstablished: false
-        };
-        
-        // Update splash screen status
-        function updateSplashStatus(message) {
-            const statusEl = document.getElementById('splash-status');
-            if (statusEl) {
-                statusEl.textContent = message;
-            }
-        }
-        
-        // Hide splash screen when everything is ready
-        function hideSplashScreen() {
-            // Check if all critical components are loaded
-            if (window.appLoadingState.componentsLoaded && 
-                window.appLoadingState.coreScriptsLoaded) {
-                
-                updateSplashStatus("Application ready!");
-                
-                // Add a slight delay before hiding the splash screen
-                setTimeout(() => {
-                    const splashScreen = document.getElementById('splash-screen');
-                    if (splashScreen) {
-                        splashScreen.classList.add('opacity-0');
-                        setTimeout(() => {
-                            splashScreen.classList.add('hidden');
-                        }, 500);
-                    }
-                }, 500);
-            }
-        }
-        
-        // Define placeholder functions to prevent errors
-        if (!window.startAutoRefresh) {
-            window.startAutoRefresh = function initialPlaceholder() {
-                console.log("Initial placeholder auto-refresh called");
-            };
-        }
-        
-        if (!window.stopAutoRefresh) {
-            window.stopAutoRefresh = function initialPlaceholderStop() {};
-        }
-        
-        // Wait for components to load before running functionality
-        document.addEventListener('components-loaded', function() {
-            console.log('All components loaded, ready for final initialization');
-            updateSplashStatus("UI components loaded");
-            window.appLoadingState.componentsLoaded = true;
-            hideSplashScreen();
-        });
-        
-        // Listen for WebSocket connection
-        document.addEventListener('websocket-connected', function() {
-            updateSplashStatus("Connected to device");
-            window.appLoadingState.connectionEstablished = true;
-        });
-    </script>
+      <section class="card" id="energyCard">
+        <h2>Энергия и температура</h2>
+        <table>
+          <tr><td>Заряд (Ah)</td><td id="ampHours">--</td></tr>
+          <tr><td>Энергия (Wh)</td><td id="wattHours">--</td></tr>
+          <tr><td>Время работы</td><td id="outputTime">--</td></tr>
+          <tr><td>Вход (Uin)</td><td id="inputVoltage">--</td></tr>
+          <tr><td>Темп. внутр.</td><td class="energy-temp-in">--</td></tr>
+          <tr><td>Темп. внешн.</td><td class="energy-temp-ex">--</td></tr>
+        </table>
+      </section>
 
-    <!-- Critical scripts in the correct order - Load connectivity_check.js AFTER core.js -->
-    <script src="js/component_loader.js"></script>
-    <script src="js/auto_refresh.js"></script>
-    <script src="js/core.js" onload="window.appLoadingState.coreScriptsLoaded = true; updateSplashStatus('Core scripts loaded'); hideSplashScreen();"></script>
-    <script src="js/connectivity_check.js"></script>
+      <footer><span class="model"></span></footer>
+    </tab>
 
-    <!-- Connection handler for device change requests -->
-    <script>
-        // Check if there's a pending connection request from a page reload
-        document.addEventListener('DOMContentLoaded', function() {
-            const pendingConnection = sessionStorage.getItem('connectingToDevice');
-            if (pendingConnection) {
-                console.log('Resuming connection to', pendingConnection);
-                // Clear the flag
-                sessionStorage.removeItem('connectingToDevice');
-                
-                // Wait for the page to fully load before attempting connection
-                setTimeout(() => {
-                    if (typeof window.connectToDevice === 'function') {
-                        window.connectToDevice(pendingConnection);
-                    }
-                }, 2000);
-            }
-        });
-    </script>
+    <!-- Tab: Профили -->
+    <tab id="page-prot" class="tabpage hidden">
+      <section class="card" id="protCard">
+        <h2>Профиль и защита</h2>
+        <table class="editable">
+          <tr><td>M-Pre</td><td class="ctrl"><select id="protMemGroup" class="memgroup-sel"><option value="0">M0</option><option value="1">M1</option><option value="2">M2</option><option value="3">M3</option><option value="4">M4</option><option value="5">M5</option><option value="6">M6</option><option value="7">M7</option><option value="8">M8</option><option value="9">M9</option></select></td></tr>
+          <tr><td>V-set</td><td class="ctrl"><div class="input-wrap"><input id="pSetV" type="number" step="0.01" min="0"><span class="suffix">V</span></div></td></tr>
+          <tr><td>I-set</td><td class="ctrl"><div class="input-wrap"><input id="pSetI" type="number" step="0.001" min="0"><span class="suffix">A</span></div></td></tr>
+          <tr><td>S-LVP</td><td class="ctrl"><div class="input-wrap"><input id="pLvp" type="number" step="0.01" min="0"><span class="suffix">V</span></div></td></tr>
+          <tr><td>S-OVP</td><td class="ctrl"><div class="input-wrap"><input id="pOvp" type="number" step="0.01" min="0"><span class="suffix">V</span></div></td></tr>
+          <tr><td>S-OCP</td><td class="ctrl"><div class="input-wrap"><input id="pOcp" type="number" step="0.001" min="0"><span class="suffix">A</span></div></td></tr>
+          <tr><td>S-OPP</td><td class="ctrl"><div class="input-wrap"><input id="pOpp" type="number" step="0.1" min="0"><span class="suffix">W</span></div></td></tr>
+          <tr><td>S-OTP</td><td class="ctrl"><div class="input-wrap"><input id="pOtp" type="number" step="1" min="0"><span class="suffix">°C</span></div></td></tr>
+          <tr><td>S-ETP</td><td class="ctrl"><div class="input-wrap"><input id="pEtp" type="number" step="1" min="0"><span class="suffix">°C</span></div></td></tr>
+          <tr><td>S-OHP</td><td class="ctrl"><div class="input-wrap"><input id="pOhpH" type="number" step="1" min="0" max="99" placeholder="ч"><span class="suffix">ч</span></div><div class="input-wrap"><input id="pOhpM" type="number" step="1" min="0" max="59" placeholder="мин"><span class="suffix">мин</span></div></td></tr>
+          <tr><td>S-OAH</td><td class="ctrl"><div class="input-wrap"><input id="pOha" type="number" step="0.001" min="0"><span class="suffix">Ah</span></div></td></tr>
+          <tr><td>S-OWH</td><td class="ctrl"><div class="input-wrap"><input id="pOwh" type="number" step="0.01" min="0"><span class="suffix">Wh</span></div></td></tr>
+          <tr><td>S-INI</td><td class="ctrl"><input id="pIni" type="checkbox"></td></tr>
+        </table>
+        <br/>
+        <div class="row">
+          <button id="protCancelBtn" class="btn btn-ghost">Отменить</button>
+          <button id="protSaveBtn" class="btn btn-primary">Сохранить</button>
+        </div>
+        <div class="row">
+          <button id="protRecallBtn" class="btn btn-warning">Применить</button>
+        </div>
+      </section>
+      <footer><span class="model"></span></footer>
+    </tab>
 
-    <!-- UI Components -->
-    <script src="js/tab_component.js"></script>
-    <script src="js/component_initializer.js"></script>
-    <script src="js/web_interface.js"></script>
-    <script src="js/form_standardizer.js"></script>
-    <script src="js/settings_init.js"></script>
-    
-    <!-- Debug tools last -->
-    <script src="js/connectivity_check.js"></script>
-    <script src="js/log_viewer.js"></script>
+    <!-- Tab: Настройки -->
+    <tab id="page-cfg" class="tabpage hidden">
+      <section class="card" id="cfgCard">
+        <h2>Настройки устройства</h2>
+        <table class="editable row">
+          <tr><td>Подсветка</td><td class="ctrl"><input id="cBacklight" type="number" step="1" min="1" max="5"></td></tr>
+          <tr><td>Сон (мин)</td><td class="ctrl"><input id="cSleep" type="number" step="1" min="0" max="255"></td></tr>
+          <tr><td>Slave адрес</td><td class="ctrl"><input id="cSlave" type="number" step="1" min="0" max="247"></td></tr>
+          <tr><td>Baud rate</td><td class="ctrl"><select id="cBaud"><option value="0">9600</option><option value="1">14400</option><option value="2">19200</option><option value="3">38400</option><option value="4">56000</option><option value="5">576000</option><option value="6" selected>115200</option><option value="7">2400</option><option value="8">4800</option></select></td></tr>
+          <tr><td>Единицы темп.</td><td class="ctrl"><select id="cTempUnit"><option value="c">°C</option><option value="f">°F</option></select></td></tr>
+          <tr><td>Зуммер</td><td class="ctrl"><input id="cBeeper" type="checkbox"></td></tr>
+          <tr><td>MPPT</td><td class="ctrl"><input id="cMppt" type="checkbox"><input id="cMpptThr" type="number" step="0.01" min="0.75" max="0.88" placeholder="порог" style="width:80px"></td></tr>
+          <tr><td>CP (CW) mode</td><td class="ctrl"><input id="cCpMode" type="checkbox"></td></tr>
+          <tr><td>Ток откл. АКБ (A)</td><td class="ctrl"><input id="cBtf" type="number" step="0.001" min="0"></td></tr>
+          <tr><td>BCH заряд АКБ</td><td class="ctrl"><input id="cBch" type="checkbox"><input id="cBchThr" type="number" step="0.01" min="0" placeholder="порог V" style="width:80px"></td></tr>
+          <tr><td>BTF откл. (0x2C)</td><td class="ctrl"><input id="cBtfEn" type="checkbox"><input id="cBtfCut" type="number" step="0.001" min="0" placeholder="ток A" style="width:80px"></td></tr>
+          <tr><td>CLOF откл. выхода</td><td class="ctrl"><input id="cClof" type="checkbox"></td></tr>
+          <tr><td>Часовой пояс</td><td class="ctrl"><select id="cTz"></select></td></tr>
+        </table>
+        <div class="row">
+          <button id="cfgCancelBtn" class="btn btn-ghost">Отменить</button>
+          <button id="cfgSaveBtn" class="btn btn-primary">Сохранить</button>
+        </div>
+        <div class="row">
+          <button id="psuResetBtn" class="btn btn-danger">Сброс БП к заводским</button>
+        </div>
+      </section>
 
-    <!-- Final initialization for good measure -->
-    <script>
-        // Run a final initialization check when window is fully loaded
-        window.addEventListener('load', function() {
-            console.log('Window fully loaded, running final checks');
-            updateSplashStatus("Finalizing application setup");
-            
-            // Verify auto-refresh timer is running or start if needed
-            setTimeout(function() {
-                if (!window.autoRefreshTimer && typeof window.startAutoRefresh === 'function') {
-                    console.log("Auto-refresh not detected running, starting it now");
-                    window.startAutoRefresh();
-                }
-                
-                // Hide splash screen unconditionally after a timeout
-                setTimeout(() => {
-                    const splashScreen = document.getElementById('splash-screen');
-                    if (splashScreen) {
-                        splashScreen.classList.add('splash-hidden');
-                    }
-                }, 1000);
-            }, 1500);
-        });
-    </script>
+      <section class="card" id="modwifiCard">
+        <h2>WiFi-модуль БП</h2>
+        <table class="editable row">
+          <tr><td>Хост</td><td id="hostType">--</td></tr>
+          <tr><td>Конфигурация</td><td id="wifiConfig">--</td></tr>
+          <tr><td>Статус</td><td id="wifiStatus">--</td></tr>
+          <tr><td>IP БП</td><td id="wifiIpPsu">--</td></tr>
+        </table>
+      </section>
+
+      <section class="card" id="wifiCard">
+        <h2>WiFi <button id="wifiRefresh" class="btn btn-sm btn-ghost">обновить</button></h2>
+        <table class="editable row">
+          <tr><td>Сеть</td><td id="wifiSsid">--</td></tr>
+          <tr><td>IP</td><td id="wifiIp">--</td></tr>
+          <tr><td>Сигнал</td><td id="wifiRssi">--</td></tr>
+        </table>
+        <div class="row wrap">
+          <input id="wifiNewSsid" type="text" placeholder="SSID">
+          <input id="wifiNewPass" type="password" placeholder="Пароль">
+          <button id="wifiAddBtn" class="btn btn-ghost" title="Добавить сеть">+</button>
+        </div>
+      </section>
+
+
+      <section class="card" id="serversCard">
+        <h2>Серверы</h2>
+        <table id="serversList" class="editable row"></table>
+        <div class="row wrap">
+          <input id="newName" type="text" placeholder="Имя (PSU)">
+          <input id="newIp" type="text" placeholder="192.168.1.100">
+          <button id="addOk" class="btn btn-ghost" title="Добавить сервер">+</button>
+        </div>
+      </section>
+
+      <div class="row">
+        <button id="restartBtn" class="btn btn-danger">Перезапустить ESP</button>
+      </div>
+
+      <footer><span class="model"></span></footer>
+    </tab>
+  </main>
+
+
+  <nav id="tabbar">
+    <button data-page="main" class="active">Главная</button>
+    <button data-page="prot">Профили</button>
+    <button data-page="cfg">Настройки</button>
+  </nav>
+
+  <div id="toast"></div>
+  <script src="main.js"></script>
 </body>
 </html>

@@ -12,7 +12,8 @@ enum class MenuState {
   PROTECTION_MENU,
   SETTINGS_MENU,
   DEBUG_MENU,
-  CD_DATA_MENU  // Add new menu state for CD Data Groups
+  CD_DATA_MENU,  // Add new menu state for CD Data Groups
+  WIFI_MENU      // Add new menu state for WiFi Settings
 };
 
 // Helper parsing functions

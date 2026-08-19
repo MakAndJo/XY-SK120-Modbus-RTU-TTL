@@ -2,12 +2,11 @@
 
 #include <Arduino.h>
 #include "XY-SKxxx.h"
-#include "XY-SKxxx_Config.h"
+#include "XY-SKxxx_Config.h" // Include this for XYModbusConfig
 
-// Display the settings menu
+// Forward declarations of functions in menu_settings.cpp
 void displaySettingsMenu();
 
-// Handle settings menu commands
 void handleSettingsMenu(const String& input, XY_SKxxx* ps, XYModbusConfig& config);
 
 // Display basic device settings

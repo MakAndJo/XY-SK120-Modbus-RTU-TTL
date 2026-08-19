@@ -7,8 +7,8 @@ namespace xy_sk {
 
 // Constants for data group configuration
 constexpr uint16_t DATA_GROUP_BASE_ADDR = 0x0050;     // M0 starting address (0050H)
-constexpr uint16_t DATA_GROUP_SIZE = 0x0010;          // 16 bytes per group (14 registers used)
-constexpr uint16_t DATA_GROUP_REGISTERS = 14;         // Number of registers in each group
+constexpr uint16_t DATA_GROUP_SIZE = 0x0010;          // 16 registers per group (15 used: 0x00-0x0E)
+constexpr uint16_t DATA_GROUP_REGISTERS = 15;         // Number of registers in each group (V-SET..S-ETP)
 constexpr uint16_t EXTRACT_M_REGISTER = 0x001D;       // Register to call memory groups
 
 // Memory Group Register Offsets (from the base address of each memory group)
@@ -26,7 +26,8 @@ enum class GroupRegisterOffset : uint8_t {
     VOLTAGE_BACK     = 0x0A, // 0x005A: Back to preset voltage value
     CURRENT_BACK     = 0x0B, // 0x005B: Back to preset current value
     POWER_BACK       = 0x0C, // 0x005C: Back to preset power value
-    PARAMETERS       = 0x0D  // 0x005D: Parameter settings (bit flags)
+    PARAMETERS       = 0x0D, // 0x005D: Parameter settings (bit flags)
+    ETP_SET          = 0x0E  // 0x005E: External Temperature Protection value
 };
 
 // Enum for memory groups

@@ -5,7 +5,8 @@
 #include "menu_protection.h"
 #include "menu_settings.h"
 #include "menu_debug.h"
-#include "menu_cd_data.h"  // Include the new header
+#include "menu_cd_data.h"
+#include "menu_wifi.h"  // Add this include for WiFi menu functions
 
 // Global variables for serial interface
 static MenuState currentMenu = MenuState::MAIN_MENU;
@@ -24,6 +25,27 @@ void initializeSerialInterface() {
   Serial.println("\n===== XY-SK Power Supply Interface =====");
   Serial.println("Type 'help' for menu, 'status' for current readings, 'prot' for protection settings");
   displayMainMenu();
+}
+
+void processSerialInput() {
+  static String command = "";
+  
+  // Check for new serial input
+  if (Serial.available()) {
+    char c = Serial.read();
+    
+    // Process command when newline received
+    if (c == '\n' || c == '\r') {
+      if (command.length() > 0) {
+        XYModbusConfig config;
+        processSerialCommand(command, nullptr, config);
+        command = "";
+      }
+    } else {
+      // Add character to buffer
+      command += c;
+    }
+  }
 }
 
 void processSerialCommand(const String& input, XY_SKxxx* ps, XYModbusConfig& config) {
@@ -51,7 +73,8 @@ void processSerialCommand(const String& input, XY_SKxxx* ps, XYModbusConfig& con
       case MenuState::PROTECTION_MENU: displayProtectionMenu(); break;
       case MenuState::SETTINGS_MENU: displaySettingsMenu(); break;
       case MenuState::DEBUG_MENU: displayDebugMenu(); break;
-      case MenuState::CD_DATA_MENU: displayCDDataMenu(); break;  // Add case for CD Data menu
+      case MenuState::CD_DATA_MENU: displayCDDataMenu(); break;
+      case MenuState::WIFI_MENU: displayWiFiMenu(); break;  // Add case for WiFi menu
     }
     return;
   } else if (input.equalsIgnoreCase("status")) {
@@ -131,8 +154,11 @@ void processSerialCommand(const String& input, XY_SKxxx* ps, XYModbusConfig& con
     case MenuState::DEBUG_MENU:
       handleDebugMenu(input, ps);
       break;
-    case MenuState::CD_DATA_MENU:  // Add case for handling CD Data menu commands
+    case MenuState::CD_DATA_MENU:
       handleCDDataMenu(input, ps);
+      break;
+    case MenuState::WIFI_MENU:  // Add case for handling WiFi menu commands
+      handleWiFiMenu(input, ps);
       break;
   }
 }

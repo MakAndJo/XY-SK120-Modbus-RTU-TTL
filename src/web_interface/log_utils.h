@@ -19,8 +19,16 @@
 #define TZ_GMT       0 // Greenwich Mean Time
 #define TZ_CET       1 // Central European Time
 #define TZ_EET       2 // Eastern European Time
+#define TZ_MSK       3 // Moscow Time
+#define TZ_SAMT      4 // Samara Time
+#define TZ_YEKT      5 // Yekaterinburg Time
+#define TZ_OMST      6 // Omsk Time
+#define TZ_KRAT      7 // Krasnoyarsk Time
+#define TZ_IRKT      8 // Irkutsk Time
 #define TZ_JST       9 // Japan Standard Time
 #define TZ_AEST     10 // Australian Eastern Standard Time
+#define TZ_MAGT     11 // Magadan Time
+#define TZ_PETT     12 // Kamchatka Time
 
 // Flags to track NTP configuration
 extern bool ntpConfigured;
@@ -113,8 +121,16 @@ const TimeZoneConfig TIME_ZONES[] = {
     {TZ_PST * 3600, 3600, "PST (UTC-8)"},
     {TZ_CET * 3600, 3600, "CET (UTC+1)"},
     {TZ_EET * 3600, 3600, "EET (UTC+2)"},
+    {TZ_MSK * 3600, 0, "Moscow (UTC+3)"},
+    {TZ_SAMT * 3600, 0, "Samara (UTC+4)"},
+    {TZ_YEKT * 3600, 0, "Yekaterinburg (UTC+5)"},
+    {TZ_OMST * 3600, 0, "Omsk (UTC+6)"},
+    {TZ_KRAT * 3600, 0, "Krasnoyarsk (UTC+7)"},
+    {TZ_IRKT * 3600, 0, "Irkutsk (UTC+8)"},
     {TZ_JST * 3600, 0, "JST (UTC+9)"},
-    {TZ_AEST * 3600, 3600, "AEST (UTC+10)"}
+    {TZ_AEST * 3600, 3600, "AEST (UTC+10)"},
+    {TZ_MAGT * 3600, 0, "Magadan (UTC+11)"},
+    {TZ_PETT * 3600, 0, "Kamchatka (UTC+12)"}
 };
 
 /**

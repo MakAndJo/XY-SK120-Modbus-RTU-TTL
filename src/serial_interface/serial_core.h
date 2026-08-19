@@ -2,25 +2,14 @@
 
 #include <Arduino.h>
 #include "XY-SKxxx.h"
+#include "XY-SKxxx_Config.h" // Make sure XYModbusConfig is included
 #include "serial_interface.h"
 
-// Initialize the serial interface
-void initializeSerialInterface();
-
-// Process commands
-void processSerialCommand(const String& input, XY_SKxxx* ps, XYModbusConfig& config);
-
-// Get current menu state
 MenuState getCurrentMenuState();
-
-// Set current menu state
 void setMenuState(MenuState state);
-
-// Display device info
+void initializeSerialInterface();
+void processSerialInput();
+void processSerialCommand(const String& input, XY_SKxxx* ps, XYModbusConfig& config);
 void displayDeviceInfo(XY_SKxxx* ps);
-
-// Display power supply status
 void displayDeviceStatus(XY_SKxxx* ps);
-
-// Display protection settings
 void displayDeviceProtectionStatus(XY_SKxxx* ps);
