@@ -84,6 +84,24 @@ const broker = aedes();
 createNetServer(broker.handle).listen(TCP_PORT, () =>
   console.log(`[broker] MQTT (TCP) listening on :${TCP_PORT}`));
 
+// Log device connect/disconnect to the broker (clientId is "xy-<deviceId>")
+broker.on('client', (client) => {
+  const id = String(client.id || '');
+  if (id.startsWith('xy-')) {
+    console.log(`[broker] device connected: ${id}`);
+  } else {
+    console.log(`[broker] client connected: ${id}`);
+  }
+});
+broker.on('clientDisconnect', (client) => {
+  const id = String(client.id || '');
+  if (id.startsWith('xy-')) {
+    console.log(`[broker] device disconnected: ${id}`);
+  } else {
+    console.log(`[broker] client disconnected: ${id}`);
+  }
+});
+
 function bindKey(deviceId) {
   return createHash('md5').update(deviceId).digest('hex');
 }
