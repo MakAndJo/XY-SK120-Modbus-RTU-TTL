@@ -125,10 +125,14 @@ function addSubscriber(deviceId, ws) {
   // deliver latest known state immediately
   const cached = lastState.get(deviceId);
   if (cached) {
+    // online is authoritative: if the device is offline the cached info/status
+    // is stale and must not be replayed as a live value.
+    const isOn = cached.get('online') === '1' || cached.get('online') === 1;
     for (const [kind, value] of cached) {
       if (kind === 'online') {
-        send(ws, { type: 'online', deviceId, online: value === '1' || value === 1 });
+        send(ws, { type: 'online', deviceId, online: isOn });
       } else if (kind !== 'command') {
+        if (!isOn) continue; // don't replay stale info/status for an offline block
         send(ws, { type: kind, deviceId, data: value });
       }
     }

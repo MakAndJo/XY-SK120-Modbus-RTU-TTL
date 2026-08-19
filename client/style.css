@@ -64,6 +64,7 @@ header h1 { font-size: 1.2rem; font-weight: 600; display: inline; }
 header .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
 .dot-on { background: var(--green); box-shadow: 0 0 8px var(--green); }
 .dot-off { background: var(--red); }
+.dot-unknown { background: var(--muted); }
 #connText { color: var(--muted); font-size: 0.85rem; }
 
 .header-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }

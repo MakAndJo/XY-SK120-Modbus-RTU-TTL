@@ -155,6 +155,7 @@ function switchDevice(deviceId) {
   try { localStorage.setItem(CURRENT_KEY, deviceId); } catch {}
   resetUi();
   renderDeviceSelect();
+  renderConn();
   toast(`Устройство ${deviceName(deviceId)}`);
   if (ws && ws.readyState === WebSocket.OPEN) {
     send({ type: "subscribe", deviceId });
@@ -260,8 +261,25 @@ function loadTimeZones() {
 }
 
 function setConn(offline) {
+  connected = !offline;
+  renderConn();
+}
+
+// Header indicator reflects the bound device, not the WS transport
+function renderConn() {
   const dot = $("conn");
-  $("connText").textContent = offline ? "offline" : "online";
+  const txt = $("connText");
+  let on = false, off = false, unknown = false, label = "--";
+  if (!connected) { off = true; label = "offline"; }
+  else if (boundDeviceId && onlineState[boundDeviceId] === true) { on = true; label = "online"; }
+  else if (boundDeviceId && onlineState[boundDeviceId] === false) { off = true; label = "offline"; }
+  else if (boundDeviceId) { unknown = true; label = "..."; }
+  if (dot) {
+    dot.classList.toggle("dot-on", on);
+    dot.classList.toggle("dot-off", off);
+    dot.classList.toggle("dot-unknown", unknown);
+  }
+  txt.textContent = label;
 }
 
 function fmtTime(sec) {
@@ -578,11 +596,13 @@ function handleMessage(raw) {
   // New WS gateway frames: status / info / online / bindResult / response / error
   switch (msg.type) {
     case "status":
+      // Never paint live-looking values for a block we know is offline: the
+      // frame can only be stale (late arrival, cached replay, etc).
+      if (boundDeviceId && msg.deviceId === boundDeviceId && onlineState[msg.deviceId] === false) return;
       if (boundDeviceId && msg.deviceId === boundDeviceId) renderStatus(msg.data || msg);
       return;
     case "info":
       if (msg.data) {
-        if (msg.data.deviceId) onlineState[msg.data.deviceId] = true;
         if (msg.data.deviceId === boundDeviceId && msg.data.name) {
           upsertDevice(msg.data.deviceId, msg.data.name);
           $("deviceName").textContent = msg.data.name;
@@ -593,6 +613,7 @@ function handleMessage(raw) {
     case "online":
       if (msg.deviceId) onlineState[msg.deviceId] = msg.online;
       renderServersList();
+      renderConn();
       return;
     case "bindResult":
       if (msg.ok) {
@@ -604,6 +625,7 @@ function handleMessage(raw) {
         renderDeviceSelect();
         send({ type: "subscribe", deviceId: msg.deviceId });
         afterBind();
+        renderConn();
         toast(`Привязано: ${msg.deviceId}`);
       } else {
         toast(msg.error || "Ошибка привязки");
