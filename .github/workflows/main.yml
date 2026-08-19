@@ -1,0 +1,40 @@
+name: Build PlatformIO
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        env: [seeed_xiao_esp32s3, seeed_xiao_esp32c3]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install PlatformIO
+        run: |
+          pip install --upgrade platformio
+          pio --version
+
+      - name: Build
+        run: pio run -e ${{ matrix.env }}
+
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ matrix.env }}
+          path: |
+            .pio/build/${{ matrix.env }}/*.bin
+          if-no-files-found: error
