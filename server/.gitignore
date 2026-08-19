@@ -1,0 +1,4 @@
+node_modules/
+*.log
+data/devices.json
+.DS_Store

@@ -1,0 +1,14 @@
+{
+  "name": "xysk-server",
+  "version": "0.1.0",
+  "description": "XY-SK150 MQTT broker + WebSocket gateway + device bind REST API",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "aedes": "^0.51.3",
+    "ws": "^8.18.0"
+  }
+}
