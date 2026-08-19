@@ -161,33 +161,10 @@ bool saveWiFiCredentialsToNVS(const String& ssid, const String& password, int pr
         newCreds["priority"] = priority;
     }
 
-    // Sort networks by priority
-    // Create a temporary array for sorting
-    JsonArray sortedArray = doc.to<JsonArray>();
-    
-    // Extract networks into a std::vector for sorting
-    std::vector<JsonObject> networksVector;
-    for (JsonObject network : wifiList) {
-        networksVector.push_back(network);
-    }
-    
-    // Sort the vector by priority
-    std::sort(networksVector.begin(), networksVector.end(), 
-        [](JsonObject a, JsonObject b) {
-            return a["priority"].as<int>() < b["priority"].as<int>();
-        });
-    
-    // Rebuild the array in priority order
-    doc.clear();
-    JsonArray sortedWifiList = doc.to<JsonArray>();
-    for (JsonObject network : networksVector) {
-        JsonObject newNetwork = sortedWifiList.createNestedObject();
-        newNetwork["ssid"] = network["ssid"];
-        newNetwork["password"] = network["password"];
-        newNetwork["priority"] = network["priority"];
-    }
-
-    // Serialize the updated JSON document
+    // Serialize the updated JSON document. Order is irrelevant: the loader
+    // (connectToSavedNetworks) re-sorts by priority. Avoid the old
+    // vector<JsonObject> + doc.clear() round trip — after clear() the stored
+    // JsonObject references are dead and the array serializes as [].
     String updatedWifiListJson;
     serializeJson(doc, updatedWifiListJson);
     

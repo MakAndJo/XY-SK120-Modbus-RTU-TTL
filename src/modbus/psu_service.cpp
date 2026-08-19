@@ -2,6 +2,7 @@
 #include <WiFi.h>
 #include "log_utils/log_utils.h"
 #include "config_manager.h"
+#include "wifi_interface/wifi_settings.h"
 
 // Declared in main.cpp
 extern XY_SKxxx* powerSupply;
@@ -682,6 +683,37 @@ String handleMqttAction(const String& action, const char* payload) {
   }
   if (action == "getData" || action == "getStatus") {
     return getStatusResponse();
+  }
+  if (action == "getTimeZone") {
+    DynamicJsonDocument responseDoc(1024);
+    responseDoc["action"] = "timeZoneData";
+    responseDoc["timeZones"] = serialized(getAvailableTimeZones());
+    responseDoc["current"] = serialized(getCurrentTimeZone());
+    String response;
+    serializeJson(responseDoc, response);
+    return response;
+  }
+  if (action == "getWifiStatus") {
+    DynamicJsonDocument responseDoc(512);
+    responseDoc["action"] = "wifiStatusResponse";
+    responseDoc["wifiStatus"] = getWifiStatus();
+    String response;
+    serializeJson(responseDoc, response);
+    return response;
+  }
+  if (action == "addWifiNetwork") {
+    String ssid = doc["ssid"] | "";
+    String password = doc["password"] | "";
+    int priority = doc["priority"] | -1;
+    bool success = ssid.length() > 0 && saveWiFiCredentialsToNVS(ssid, password, priority);
+    if (success) connectToSavedNetworks();
+    DynamicJsonDocument responseDoc(256);
+    responseDoc["action"] = "addWifiNetworkResponse";
+    responseDoc["success"] = success;
+    responseDoc["ssid"] = ssid;
+    String response;
+    serializeJson(responseDoc, response);
+    return response;
   }
   if (action == "setConfig") {
     return "{\"action\":\"setConfigResponse\",\"status\":\"success\"}";

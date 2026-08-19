@@ -254,10 +254,12 @@ async function handleBind(reqBody) {
     };
   }
   const rec = devices[match];
-  if (rec.boundTo) {
+  const userId = `user_${createHash('sha256').update(key).digest('hex').slice(0, 12)}`;
+  // Idempotent bind: the same owner (key is deterministic md5(deviceId)) may
+  // re-bind from a fresh browser without getting a 409.
+  if (rec.boundTo && rec.boundTo !== userId) {
     return { status: 409, json: { error: `Device already bound to user ${rec.boundTo}` } };
   }
-  const userId = `user_${createHash('sha256').update(key).digest('hex').slice(0, 12)}`;
   rec.boundTo = userId;
   await saveDevices();
   console.log(`[bind] device ${match} bound to ${userId}`);

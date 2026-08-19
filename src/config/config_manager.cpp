@@ -16,7 +16,21 @@ static DeviceConfig configData = {
 static bool loadFromNVS(DeviceConfig& out) {
   Preferences prefs;
   if (!prefs.begin("xyskcfg", true)) {
-    Serial.println("Failed to open NVS for config reading");
+    // Namespace does not exist yet (first boot). Create it with the compiled-in
+    // defaults so later reads don't spam nvs_open NOT_FOUND.
+    if (prefs.begin("xyskcfg", false)) {
+      prefs.putUChar("modbusId", configData.modbusId);
+      prefs.putULong("baudRate", configData.baudRate);
+      prefs.putUChar("dataBits", configData.dataBits);
+      prefs.putUChar("parity", configData.parity);
+      prefs.putUChar("stopBits", configData.stopBits);
+      prefs.putUShort("updateInterval", configData.updateInterval);
+      prefs.putString("deviceName", configData.deviceName);
+      prefs.end();
+      out = configData;
+      return true;
+    }
+    Serial.println("Failed to open NVS for config writing");
     return false;
   }
   out.modbusId = prefs.getUChar("modbusId", configData.modbusId);

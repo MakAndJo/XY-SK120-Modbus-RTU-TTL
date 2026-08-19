@@ -12,6 +12,11 @@
 #define MQTT_PASS_KEY "pass"
 #define MQTT_NAME_KEY "name"
 
+// Compile-time default broker. Used when nothing is saved in NVS yet, so the
+// device connects right after flashing. Override with serial 'mqtt set ...'.
+#define MQTT_DEFAULT_HOST   "192.168.0.200"
+#define MQTT_DEFAULT_PORT   1883
+
 // Topic root: xysk/<deviceId>/...
 String mqttDeviceId();
 

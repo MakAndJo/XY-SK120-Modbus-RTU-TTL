@@ -12,6 +12,11 @@ static volatile bool mqttTaskRunning = false;
 static volatile bool mqttEnabled = false;
 static String mqttDeviceIdStr;
 
+// PubSubClient::setServer(const char*) stores a pointer, it does NOT copy the
+// string. mqttHost() returns a temporary String, so passing host.c_str() there
+// would leave _domain dangling after the call. Keep a stable buffer instead.
+static char mqttHostBuf[96] = {0};
+
 static const char* ONLINE_TOPIC_TPL  = "xysk/%s/online";
 static const char* INFO_TOPIC_TPL    = "xysk/%s/info";
 static const char* STATUS_TOPIC_TPL  = "xysk/%s/status";
@@ -30,17 +35,17 @@ String mqttDeviceId() {
 bool mqttConfigLoaded() {
   Preferences prefs;
   bool ok = prefs.begin(MQTT_NAMESPACE, true);
-  if (!ok) return false;
+  if (!ok) return true; // NVS unavailable -> fall back to the compile-time default
   String host = prefs.getString(MQTT_HOST_KEY, "");
   prefs.end();
-  return host.length() > 0;
+  return host.length() > 0 || strlen(MQTT_DEFAULT_HOST) > 0;
 }
 
 String mqttHost() {
   Preferences prefs;
-  String host = "";
+  String host = MQTT_DEFAULT_HOST;
   if (prefs.begin(MQTT_NAMESPACE, true)) {
-    host = prefs.getString(MQTT_HOST_KEY, "");
+    host = prefs.getString(MQTT_HOST_KEY, MQTT_DEFAULT_HOST);
     prefs.end();
   }
   return host;
@@ -48,9 +53,9 @@ String mqttHost() {
 
 uint16_t mqttPort() {
   Preferences prefs;
-  uint16_t port = 1883;
+  uint16_t port = MQTT_DEFAULT_PORT;
   if (prefs.begin(MQTT_NAMESPACE, true)) {
-    port = prefs.getUShort(MQTT_PORT_KEY, 1883);
+    port = prefs.getUShort(MQTT_PORT_KEY, MQTT_DEFAULT_PORT);
     prefs.end();
   }
   return port;
@@ -185,8 +190,10 @@ static void mqttTask(void* param) {
     }
     if (!mqttClient.connected()) {
       String clientId = String("xy-") + id;
+      // Copy into a stable buffer: PubSubClient::setServer stores the pointer.
+      strlcpy(mqttHostBuf, mqttHost().c_str(), sizeof(mqttHostBuf));
       // Last-will: publish retained 0 to <device>/online if we drop off.
-      mqttClient.setServer(mqttHost().c_str(), mqttPort());
+      mqttClient.setServer(mqttHostBuf, mqttPort());
       mqttClient.setCallback(onMqttMessage);
       mqttClient.setBufferSize(2048);
       bool connOk = mqttClient.connect(clientId.c_str(), mqttUser().c_str(), mqttPass().c_str(),
@@ -225,8 +232,11 @@ static void mqttTask(void* param) {
 void mqttStart() {
   if (mqttTaskRunning) return;
   if (!mqttConfigLoaded()) {
-    Serial.println("[MQTT] No config saved, MQTT disabled");
-    return;
+    // First run: materialise the compile-time default into NVS so the namespace
+    // exists and the reconnect loop doesn't spam nvs_open NOT_FOUND 4x/cycle.
+    mqttSaveConfig(MQTT_DEFAULT_HOST, MQTT_DEFAULT_PORT, "", "", "XY-SK150S");
+    Serial.printf("[MQTT] No config in NVS, using default host %s:%d\n",
+                  MQTT_DEFAULT_HOST, MQTT_DEFAULT_PORT);
   }
   mqttTaskRunning = true;
   mqttEnabled = true;

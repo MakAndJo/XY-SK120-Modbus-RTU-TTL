@@ -121,7 +121,10 @@ void setup() {
 
   // Start claiming the PSU master/status registers from the very first second,
   // before/while WiFi connects. Status stays "not connected" until WiFi is up.
-  xTaskCreatePinnedToCore(wifiHostKeepAliveTask, "wifiHost", 4096, NULL, 1, NULL, 1);
+  // Priorities: keepalive runs at prio 3 (above the MQTT status poller at 1) so
+  // it always wins the Modbus mutex in time - the PSU drops its WiFi tab if the
+  // master write is delayed by bus contention.
+  xTaskCreatePinnedToCore(wifiHostKeepAliveTask, "wifiHost", 4096, NULL, 3, NULL, 1);
 
   // Start the WiFi radio in station mode.
   initNativeWifiRadio();
@@ -152,9 +155,6 @@ void setup() {
     // client (Open-Meteo refresh for the PSU weather block).
     configureNTP();
     startWeatherClient();
-
-    // Start the MQTT client (retained info/status, command subscription).
-    mqttStart();
   }
 
   // OTA over UDP (espota): pio run -e <env> -t upload --upload_port <ip>
@@ -181,6 +181,11 @@ void loop() {
 
   // OTA service
   ArduinoOTA.handle();
+
+  // Start MQTT as soon as WiFi is up. mqttStart() is idempotent, so this also
+  // re-forwards the client after WiFi reconnects (the MQTT task itself keeps
+  // reconnecting while connected() == false).
+  if (WiFi.status() == WL_CONNECTED) mqttStart();
 
   // Periodically read fresh PSU status and publish it over MQTT only when it
   // actually changed (retained, so the server/client always has the last one).

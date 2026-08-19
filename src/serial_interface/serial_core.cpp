@@ -8,6 +8,9 @@
 #include "menu_cd_data.h"
 #include "menu_wifi.h"  // Add this include for WiFi menu functions
 
+// Defined in ../serial_monitor_interface.cpp - mqtt get|set|start|stop
+void handleMqttConsoleCommand(const String& command);
+
 // Global variables for serial interface
 static MenuState currentMenu = MenuState::MAIN_MENU;
 static String serialBuffer = "";
@@ -131,6 +134,9 @@ void processSerialCommand(const String& input, XY_SKxxx* ps, XYModbusConfig& con
     if (timeout) {
       Serial.println("\nTimeout waiting for confirmation. Factory reset cancelled.");
     }
+    return;
+  } else if (input.startsWith("mqtt")) {
+    handleMqttConsoleCommand(input);
     return;
   }
   

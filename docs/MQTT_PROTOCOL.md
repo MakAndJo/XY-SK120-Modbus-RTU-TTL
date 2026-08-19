@@ -152,6 +152,9 @@ The server publishes **one command per message**. The device replies on
 |----------|-----------------|-------|
 | `ping` | — | `pingResponse` |
 | `getData`, `getStatus` | — | full status JSON (like `/status`, non-retained) |
+| `getTimeZone` | — | `timeZoneData` with `timeZones` array + `current` (list from the device, replaces the old `/api/timezone` HTTP call) |
+| `getWifiStatus` | — | `wifiStatusResponse` with `wifiStatus` = JSON string (SSID/IP/RSSI/MAC of the ESP32 radio, not the PSU WiFi module) |
+| `addWifiNetwork` | `ssid`, `password` | saves to NVS, reconnects if possible, replies `addWifiNetworkResponse` |
 | `setConfig` | `voltage` and/or `current` and/or `power` | `setConfigResponse` |
 | `powerOutput` | `enable` bool | `powerOutputResponse` |
 | `setVoltage` | `voltage` (V) | `setVoltageResponse` |
@@ -201,7 +204,9 @@ Unknown actions produce no reply. Values are float unless noted.
 4. Client sends { "type":"bind", "key":"..." } over the WebSocket gateway
    (or POSTs /api/bind). Server replies:
      ok:true  → { deviceId, userId, name, model } and auto-subscribes the device
-     ok:false → error (409 already bound / 404 key unknown)
+     ok:false → error (404 key unknown / 409 already bound to a *different* user).
+               Because the key is deterministic (md5(deviceId)), re-binding the
+               same owner from a fresh browser is idempotent and returns ok:true.
 5. The gateway forwards xysk/<deviceId>/info|status|online|response frames to
    the browser and publishes commands to xysk/<deviceId>/command on its behalf.
 ```
