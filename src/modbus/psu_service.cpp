@@ -641,6 +641,7 @@ static String handleDeviceSetting(String action, DynamicJsonDocument& doc) {
       ok = powerSupply->writeRegisters(REG_CV_SET + ((uint16_t)group * 0x0010u), 15, buf);
     }
     unlockModbus();
+    success = ok;
     responseAction = "saveMemoryGroupResponse";
   }
   else if (action == "psuReset") {
