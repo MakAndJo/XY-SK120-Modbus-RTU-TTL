@@ -26,38 +26,81 @@ function formatIpv4(v) {
   return [((v >>> 24) & 255), ((v >>> 16) & 255), ((v >>> 8) & 255), (v & 255)].join(".");
 }
 
-// ---- Multi-instance: several PSU servers saved in localStorage ----
-const SERVERS_KEY = "xypsu_servers";
+// ---- Multi-instance: several bound PSU devices (blocks) saved in localStorage ----
+const DEVICES_KEY = "xypsu_devices";
 const CURRENT_KEY = "xypsu_current";
-let servers = [];
-let currentIp = localStorage.getItem(CURRENT_KEY) || location.host;
+let devices = []; // [{ deviceId, name }]
+let onlineState = {}; // deviceId -> true/false (last known online state)
+let boundDeviceId = localStorage.getItem(CURRENT_KEY) || "";
 
-function loadServers() {
+function loadDevices() {
   try {
-    const raw = localStorage.getItem(SERVERS_KEY);
-    servers = raw ? JSON.parse(raw) : [];
-  } catch { servers = []; }
-  if (!Array.isArray(servers)) servers = [];
-  if (!servers.length) servers = [{ name: "PSU", ip: location.host }];
-  if (!servers.some((s) => s.ip === location.host)) servers.unshift({ name: "PSU", ip: location.host });
-  saveServers();
+    const raw = localStorage.getItem(DEVICES_KEY);
+    devices = raw ? JSON.parse(raw) : [];
+  } catch { devices = []; }
+  if (!Array.isArray(devices)) devices = [];
+  // Migrate the single bind saved under the old per-server key(s). The old
+  // client stored it as xypsu_bind_<currentIp>, where currentIp defaulted to
+  // location.host but could be any saved server IP.
+  if (!devices.length) {
+    // Old client stored the bind as xypsu_bind_<currentIp> where currentIp was
+    // location.host by default but could be any previously saved server IP.
+    // Scan every such key so the device shows up regardless of which host was
+    // used when it was first bound.
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (!k || k.indexOf("xypsu_bind_") !== 0) continue;
+        const old = JSON.parse(localStorage.getItem(k));
+        if (old && old.deviceId) {
+          devices.push({ deviceId: old.deviceId, name: old.name || old.deviceId });
+          break;
+        }
+      }
+    } catch {}
+  }
+  if (!devices.some((d) => d.deviceId === boundDeviceId)) {
+    // No/invalid current device: fall back to the first saved one (or none)
+    boundDeviceId = devices.length ? devices[0].deviceId : "";
+    if (boundDeviceId) { try { localStorage.setItem(CURRENT_KEY, boundDeviceId); } catch {} }
+  }
+  saveDevices();
 }
 
-function saveServers() {
-  try { localStorage.setItem(SERVERS_KEY, JSON.stringify(servers)); } catch {}
+function saveDevices() {
+  try { localStorage.setItem(DEVICES_KEY, JSON.stringify(devices)); } catch {}
+}
+
+function deviceName(deviceId) {
+  const d = devices.find((x) => x.deviceId === deviceId);
+  return d ? d.name : deviceId;
+}
+
+function upsertDevice(deviceId, name) {
+  const d = devices.find((x) => x.deviceId === deviceId);
+  if (d) d.name = name || d.name;
+  else devices.push({ deviceId, name: name || deviceId });
+  saveDevices();
 }
 
 function renderDeviceSelect() {
   const sel = $("deviceSelect");
+  if (!sel) return;
   sel.innerHTML = "";
-  servers.forEach((s, i) => {
+  if (!devices.length) {
     const opt = document.createElement("option");
-    opt.value = s.ip;
-    opt.textContent = `${s.name} (${s.ip})`;
-    if (s.ip === currentIp) opt.selected = true;
+    opt.value = "";
+    opt.textContent = "— нет устройств —";
+    sel.appendChild(opt);
+  }
+  devices.forEach((d) => {
+    const opt = document.createElement("option");
+    opt.value = d.deviceId;
+    opt.textContent = `${d.name} (${d.deviceId})`;
+    if (d.deviceId === boundDeviceId) opt.selected = true;
     sel.appendChild(opt);
   });
-  $("deviceName").textContent = servers.find((s) => s.ip === currentIp)?.name || "PSU";
+  $("deviceName").textContent = boundDeviceId ? deviceName(boundDeviceId) : "XY PSU";
   renderServersList();
 }
 
@@ -65,19 +108,29 @@ function renderServersList() {
   const tbody = $("serversList");
   if (!tbody) return;
   tbody.innerHTML = "";
-  servers.forEach((s) => {
+  if (!devices.length) {
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = 2;
+    td.style.color = "var(--muted)";
+    td.textContent = "Нет привязанных устройств. Введите код привязки (с экрана настройки БП) и нажмите «+».";
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+    return;
+  }
+  devices.forEach((d) => {
     const tr = document.createElement("tr");
     const label = document.createElement("td");
     label.className = "server-name";
     const name = document.createElement("span");
-    name.textContent = s.name;
-    if (s.ip === currentIp) name.classList.add("current");
-    const ip = document.createElement("span");
-    ip.className = "server-ip";
-    ip.textContent = s.ip;
+    name.textContent = d.name;
+    if (d.deviceId === boundDeviceId) name.classList.add("current");
+    const dev = document.createElement("span");
+    dev.className = "server-ip";
+    dev.textContent = d.deviceId + (onlineState[d.deviceId] === false ? " · offline" : onlineState[d.deviceId] === true ? " · online" : "");
     label.appendChild(name);
-    label.appendChild(ip);
-    label.addEventListener("click", () => switchDevice(s.ip));
+    label.appendChild(dev);
+    label.addEventListener("click", () => switchDevice(d.deviceId));
     tr.appendChild(label);
     const ctrl = document.createElement("td");
     ctrl.className = "ctrl";
@@ -85,7 +138,7 @@ function renderServersList() {
     delBtn.className = "btn btn-sm btn-danger";
     delBtn.textContent = "Удалить";
     delBtn.addEventListener("click", () => {
-      if (confirm(`Удалить этот сервер? (${s.ip})`)) removeDevice(s.ip);
+      if (confirm(`Удалить устройство ${d.name} (${d.deviceId})?`)) removeDevice(d.deviceId);
     });
     ctrl.appendChild(delBtn);
     tr.appendChild(ctrl);
@@ -93,24 +146,51 @@ function renderServersList() {
   });
 }
 
-function switchDevice(ip) {
-  if (!ip || ip === currentIp) return;
-  currentIp = ip;
-  try { localStorage.setItem(CURRENT_KEY, ip); } catch {}
+function switchDevice(deviceId) {
+  if (!deviceId || deviceId === boundDeviceId) return;
+  if (boundDeviceId && ws && ws.readyState === WebSocket.OPEN) {
+    send({ type: "unsubscribe", deviceId: boundDeviceId });
+  }
+  boundDeviceId = deviceId;
+  try { localStorage.setItem(CURRENT_KEY, deviceId); } catch {}
   resetUi();
   renderDeviceSelect();
-  toast(`Сервер ${ip}`);
-  setConn(false);
-  connect();
+  toast(`Устройство ${deviceName(deviceId)}`);
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    send({ type: "subscribe", deviceId });
+    afterBind();
+  }
 }
 
-// Clear all live values so nothing from the previous server is shown
-function resetUi() {
-  boundDeviceId = null;
-  const br = $("bindRow");
-  if (br) {
-    if (!loadBind() || !loadBind().deviceId) br.classList.remove("hidden");
+function addDevice(key) {
+  const k = (key || "").trim();
+  if (!k) { toast("Введите код привязки"); return; }
+  send({ type: "bind", key: k });
+}
+
+function removeDevice(deviceId) {
+  const wasCurrent = deviceId === boundDeviceId;
+  devices = devices.filter((d) => d.deviceId !== deviceId);
+  saveDevices();
+  if (!devices.length) {
+    boundDeviceId = "";
+    try { localStorage.removeItem(CURRENT_KEY); } catch {}
+    resetUi();
+    renderDeviceSelect();
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      send({ type: "unsubscribe", deviceId });
+    }
+    return;
   }
+  if (wasCurrent) {
+    switchDevice(devices[0].deviceId);
+  } else {
+    renderDeviceSelect();
+  }
+}
+
+// Clear all live values so nothing from the previous device is shown
+function resetUi() {
   protArmed = false;
   outputOn = false;
   viewingGroup = null;
@@ -133,70 +213,21 @@ function resetUi() {
   if (btn) { btn.textContent = "ВКЛ"; btn.className = "btn btn-success"; }
 }
 
-function addDevice(name, ip) {
-  ip = (ip || "").trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
-  name = (name || "").trim() || ip || "PSU";
-  if (!ip) { toast("Введите IP"); return; }
-  const existing = servers.find((s) => s.ip === ip);
-  if (existing) {
-    existing.name = name;
-  } else {
-    servers.push({ name, ip });
-  }
-  saveServers();
-  switchDevice(ip);
-}
-
-function removeDevice(ip) {
-  const wasCurrent = ip === currentIp;
-  servers = servers.filter((s) => s.ip !== ip);
-  saveServers();
-  if (!servers.length) servers = [{ name: "PSU", ip: location.host }];
-  if (wasCurrent) {
-    currentIp = servers[0].ip;
-    try { localStorage.setItem(CURRENT_KEY, currentIp); } catch {}
-    resetUi();
-  }
-  renderDeviceSelect();
-  if (wasCurrent) {
-    setConn(false);
-    connect();
-  }
-}
-
 // ---- WebSocket gateway: the server pushes fresh frames on its own ----
 let ws = null;
 let connected = false;
-let boundDeviceId = null;
-
-function loadBind() {
-  try {
-    const raw = localStorage.getItem("xypsu_bind_" + currentIp);
-    return raw ? JSON.parse(raw) : null;
-  } catch { return null; }
-}
-
-function saveBind(obj) {
-  try { localStorage.setItem("xypsu_bind_" + currentIp, JSON.stringify(obj)); } catch {}
-}
 
 function connect() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   if (ws) { ws.onclose = null; try { ws.close(); } catch {} }
-  ws = new WebSocket(`${proto}://${currentIp}/ws`);
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
   ws.onopen = () => {
     connected = true;
     setConn(false);
-    const saved = loadBind();
-    if (saved && saved.deviceId) {
-      boundDeviceId = saved.deviceId;
-      $("deviceName").textContent = saved.name || $("deviceName").textContent;
-      $("boundDevice").textContent = saved.deviceId;
-      $("bindRow").classList.add("hidden");
-      send({ type: "subscribe", deviceId: saved.deviceId });
+    if (boundDeviceId) {
+      $("deviceName").textContent = deviceName(boundDeviceId);
+      send({ type: "subscribe", deviceId: boundDeviceId });
       afterBind();
-    } else {
-      $("bindRow").classList.remove("hidden");
     }
   };
   ws.onclose = () => {
@@ -547,26 +578,30 @@ function handleMessage(raw) {
   // New WS gateway frames: status / info / online / bindResult / response / error
   switch (msg.type) {
     case "status":
-      renderStatus(msg.data || msg);
+      if (boundDeviceId && msg.deviceId === boundDeviceId) renderStatus(msg.data || msg);
       return;
     case "info":
       if (msg.data) {
-        if (msg.data.deviceId) boundDeviceId = msg.data.deviceId;
-        if (msg.data.name) $("deviceName").textContent = msg.data.name;
-        if (msg.data.deviceId) $("boundDevice").textContent = msg.data.deviceId;
-        if (msg.data.deviceId) { saveBind({ deviceId: msg.data.deviceId, name: msg.data.name }); $("bindRow").classList.add("hidden"); }
+        if (msg.data.deviceId) onlineState[msg.data.deviceId] = true;
+        if (msg.data.deviceId === boundDeviceId && msg.data.name) {
+          upsertDevice(msg.data.deviceId, msg.data.name);
+          $("deviceName").textContent = msg.data.name;
+        }
+        renderServersList();
       }
       return;
     case "online":
-      if (msg.deviceId === boundDeviceId) $("boundDevice").textContent = msg.deviceId + (msg.online ? " · online" : " · offline");
+      if (msg.deviceId) onlineState[msg.deviceId] = msg.online;
+      renderServersList();
       return;
     case "bindResult":
       if (msg.ok) {
+        upsertDevice(msg.deviceId, msg.name);
         boundDeviceId = msg.deviceId;
-        $("deviceName").textContent = msg.name || $("deviceName").textContent;
-        $("boundDevice").textContent = msg.deviceId;
-        saveBind({ deviceId: msg.deviceId, name: msg.name });
-        $("bindRow").classList.add("hidden");
+        try { localStorage.setItem(CURRENT_KEY, msg.deviceId); } catch {}
+        $("deviceName").textContent = msg.name || deviceName(msg.deviceId);
+        $("newKey").value = "";
+        renderDeviceSelect();
         send({ type: "subscribe", deviceId: msg.deviceId });
         afterBind();
         toast(`Привязано: ${msg.deviceId}`);
@@ -783,26 +818,9 @@ function cancelConfig() {
 
 // ---- Boot ----
 document.addEventListener("DOMContentLoaded", () => {
-  loadServers();
+  loadDevices();
   renderDeviceSelect();
   initTab();
-
-  $("bindBtn").addEventListener("click", () => {
-    const key = $("bindKey").value.trim();
-    if (!key) { toast("Введите код привязки"); return; }
-    send({ type: "bind", key });
-  });
-  $("bindKey").addEventListener("keydown", (e) => { if (e.key === "Enter") $("bindBtn").click(); });
-  $("unbindBtn").addEventListener("click", () => {
-    if (boundDeviceId) { send({ type: "unsubscribe", deviceId: boundDeviceId }); }
-    boundDeviceId = null;
-    try { localStorage.removeItem("xypsu_bind_" + currentIp); } catch {}
-    $("deviceName").textContent = "XY PSU";
-    $("boundDevice").textContent = "";
-    $("bindRow").classList.remove("hidden");
-    resetUi();
-    toast("Устройство отвязано");
-  });
 
   $("outBtn").addEventListener("click", toggleOutput);
   $("keyLock").addEventListener("click", toggleKeyLock);
@@ -829,16 +847,14 @@ document.addEventListener("DOMContentLoaded", () => {
     btn.addEventListener("click", () => switchTab(btn.dataset.page));
   });
 
-  // Multi-instance controls
+  // Multi-instance controls: switch bound device / add a new one by bind key
   $("deviceSelect").addEventListener("change", (e) => switchDevice(e.target.value));
   $("addOk").addEventListener("click", () => {
-    addDevice($("newName").value, $("newIp").value);
-    $("newName").value = "";
-    $("newIp").value = "";
+    addDevice($("newKey").value);
+    $("newKey").value = "";
   });
-  const addIpEnter = (e) => { if (e.key === "Enter") $("addOk").click(); };
-  $("newIp").addEventListener("keydown", addIpEnter);
-  $("newName").addEventListener("keydown", addIpEnter);
+  const addKeyEnter = (e) => { if (e.key === "Enter") $("addOk").click(); };
+  $("newKey").addEventListener("keydown", addKeyEnter);
 
   // All [data-action] "ok" buttons
   document.querySelectorAll(".btn[data-action]").forEach((btn) => {

@@ -19,12 +19,6 @@
         <select id="deviceSelect" class="device-select"></select>
       </div>
     </div>
-    <div class="header-row bind-row hidden" id="bindRow">
-      <input id="bindKey" type="text" placeholder="Код привязки" autocomplete="off">
-      <button id="bindBtn" class="btn btn-sm">Привязать</button>
-      <button id="unbindBtn" class="btn btn-sm btn-ghost">Отвязать</button>
-      <span id="boundDevice" class="bound-device"></span>
-    </div>
   </header>
 
   <main>
@@ -190,13 +184,12 @@
       </section>
 
 
-      <section class="card" id="serversCard">
-        <h2>Серверы</h2>
+      <section class="card" id="devicesCard">
+        <h2>Устройства</h2>
         <table id="serversList" class="editable row"></table>
         <div class="row wrap">
-          <input id="newName" type="text" placeholder="Имя (PSU)">
-          <input id="newIp" type="text" placeholder="192.168.1.100">
-          <button id="addOk" class="btn btn-ghost" title="Добавить сервер">+</button>
+          <input id="newKey" type="text" placeholder="Код привязки" autocomplete="off">
+          <button id="addOk" class="btn btn-ghost" title="Привязать устройство">+</button>
         </div>
       </section>
 

@@ -227,7 +227,11 @@ async function serveStatic(req, res, urlPath) {
   try {
     const data = await readFile(file);
     const ext = file.slice(file.lastIndexOf('.'));
-    res.writeHead(200, { 'Content-Type': mime[ext] || 'application/octet-stream' });
+    res.writeHead(200, {
+      'Content-Type': mime[ext] || 'application/octet-stream',
+      'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+      'Pragma': 'no-cache',
+    });
     res.end(data);
   } catch {
     res.writeHead(500);
@@ -283,6 +287,9 @@ const httpServer = createServer(async (req, res) => {
 const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
 
 wss.on('connection', (ws) => {
+  ws.on('error', (err) => {
+    console.error('[ws] client error:', err.message);
+  });
   ws.on('message', async (raw) => {
     let msg;
     try {

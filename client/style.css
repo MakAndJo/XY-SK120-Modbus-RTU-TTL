@@ -295,11 +295,3 @@ footer { padding: 12px; text-align: center; color: var(--muted); font-size: 0.8r
 @media (min-width: 700px) {
   #tabbar { width: 560px; left: 50%; right: auto; transform: translateX(-50%); border-radius: 14px 14px 0 0; overflow: hidden; }
 }
-/* Bind row in the header */
-.bind-row { justify-content: center; gap: 8px; padding: 0 8px 8px; }
-.bind-row input[type="text"] {
-  width: 220px; max-width: 60vw;
-  background: var(--card); border: 1px solid var(--border); color: var(--text);
-  padding: 6px 10px; border-radius: 6px; font-size: 14px;
-}
-.bound-device { color: var(--muted); font-size: 13px; }
