@@ -1,356 +1,175 @@
-# XY-SK120 Power Supply Control
+# XY-SK120 / XY-SK150 Power Supply Control
 
 ![Demo](documentation/demo.jpg)
 
 ![Demo](documentation/demo.gif)
 
-This project allows you to control an XY-SK120 power supply (and compatible models) over Modbus RTU using a Seeed XIAO ESP32S3.
+Control an XY-SK120 / XY-SK150(S) power supply (and compatible models) over Modbus RTU using a Seeed XIAO ESP32S3 or ESP32C3. The firmware provides a web UI, a serial monitor interface, RTC/weather sync to the PSU screensaver, and a full set of register-debugging tools.
 
 ## Features
 
-- Serial monitor control interface
-- Memory group management
-- Direct register access for debugging
-- Web interface (coming soon)
+- **Web UI** (HTTP + WebSocket) served directly from the ESP32:
+  - Live dashboard: output voltage / current / power, mode (CV/CC/CW), temperatures, energy counters
+  - Output on/off, key lock, protection clear
+  - Profile (memory group M0–M9) editor: read, save and apply full profiles
+  - Device settings: backlight, sleep, slave address, baud rate, temp unit, beeper, MPPT, CP mode, BCH/BTF/CLOF battery settings, timezone
+  - WiFi module status (PSU host block) + WiFi network management
+  - Multi-device support: switch between several PSU servers saved in the browser
+- **RTC / weather sync** — every ~10 s the ESP32 pushes Unix time plus a 3-day Open-Meteo forecast into the PSU's screensaver (register block `0x0200–0x0214`, same frame the OEM XY-WFPOW module sends)
+- **Serial monitor control interface** — menus for basic control, measurement, protection, settings, memory groups, WiFi and register debugging
+- **Register debugging** — scan/compare/sniff tools to discover undocumented registers (see below)
+- ESP32S3 and ESP32C3 targets
 
 ## Hardware Setup
 
-- Connect the XIAO ESP32S3 to the XY-SK120 using the TTL interface:
+- Connect the XIAO ESP32 to the XY-SK120/SK150 using the TTL interface:
   - XIAO TX pin → XY-SK120 RX pin
   - XIAO RX pin → XY-SK120 TX pin
   - XIAO GND → XY-SK120 GND
+- First boot opens a WiFiManager AP (`XY-SK150-Setup`) to configure your network; holding the WiFi reset pin (D0 on ESP32S3, GPIO9 on ESP32C3) to ground for 3 s resets the WiFi settings.
+
+## Web Interface
+
+After connecting, open `http://<esp-ip>/` in a browser. The UI is a single page with three tabs: **Главная** (live dashboard), **Профили** (memory group profiles) and **Настройки** (device/WiFi settings).
+
+Live data is pushed by the server over WebSocket (`/ws`) — the client never polls. See [README_WEB_UI.md](README_WEB_UI.md) for the full endpoint/action reference.
+
+### HTTP endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/` | Web UI (`index.html`) |
+| GET | `/api/data` | Current PSU status (JSON) |
+| GET/POST | `/api/config` | Device configuration (name, Modbus ID, baud, etc.) |
+| GET/POST | `/api/timezone` | Available time zones + current one / set timezone |
+| GET | `/health`, `/ping` | Health checks |
+| WS | `/ws` | WebSocket for live status + all control commands |
+
+### WebSocket actions (client → server)
+
+Control: `powerOutput`, `setVoltage`, `setCurrent`, `setPower`, `setConstantVoltage`, `setConstantCurrent`, `setConstantPower`, `setConstantPowerMode`, `setKeyLock`, `getKeyLockStatus`, `getStatus`/`getData`, `getOperatingMode`.
+
+Device settings & protection: `setProtection` (key: `lvp`/`ovp`/`ocp`/`opp`/`otp`), `setBacklight`, `setSleepTimeout`, `setSlaveAddress`, `setBaudRate`, `setTempUnit`, `setBeeper`, `setMppt`, `setBatteryCutoff`, `setBch`, `setBtfEnable`, `setBtfCutoff`, `setClof`, `setPowerOnInit`, `setCpMode`, `setOhp`, `setOha`, `setOwh`, `setMemoryGroup`, `getMemoryGroup`, `saveMemoryGroup`, `psuReset`, `clearProtection`.
+
+WiFi & system: `getWifiStatus`, `addWifiNetwork`, `loadWifiCredentials`, `saveWifiCredentials`, `removeWifiNetwork`, `updateWifiPriority`, `connectWifi`, `resetWifi`, `getTimeZones`, `setTimeZone`, `restart`.
+
+## RTC & Weather Sync
+
+The PSU's screensaver can display the current time and a 3-day weather forecast, but it only shows them when a Sinilink XY-WFPOW WiFi module (acting as Modbus master) feeds it. This firmware does the same:
+
+- **Time**: NTP sync + timezone (selectable in the UI, 14 zones from UTC-8 to UTC+12), pushed as local Unix time to `0x0200–0x0201` every ~10 s.
+- **Weather**: a background task fetches current conditions + 3-day forecast from Open-Meteo (default location is Tyumen, RU; override via `setWeatherMeteoConfig(lat, lon)`), maps the WMO codes onto the PSU's screensaver icon set and writes the block `0x0203–0x0214`.
+- The whole 21-register block `0x0200–0x0214` is written with one Modbus function 0x10 request, mirroring the OEM module.
 
 ## Serial Monitor Commands
 
-### Basic Commands
+Enter the menu number (`1`–`7`) or type a command. Top-level commands: `status`, `prot`, `config`, `info`, `help`.
 
-- `on` - Turn output ON
-- `off` - Turn output OFF
-- `set V I` - Set voltage (V) and current (I)
-- `status` - Display current status
-- `info` - Display device information
-- `config` - Display current configuration
-- `save` - Save current config to NVS
-- `reset` - Reset config to defaults
-- `help` - Show help message
+### 1. Basic Control
 
-### Memory Group Commands
+- `on` / `off` — turn output ON/OFF
+- `set V I` — set voltage (V) and current (I)
+- `lock` / `unlock` — key lock
+- `mem N` — show memory group N (0–9); `call N` — recall group; `save2mem N` — save current settings to group
+- `setmem N param value` — set a single parameter in group N (`v`, `i`, `p`, `ovp`, `ocp`, `opp`, `oah`, `owh`, `uvp`, `ucp`)
 
-- `mem N` - Display memory group N (0-9)
-- `call N` - Call memory group N (1-9) to active memory
-- `save2mem N` - Save current settings to memory group N (1-9)
-- `setmem N param value` - Set specific parameter in memory group N
-  - Parameters: v(voltage), i(current), p(power), ovp, ocp, opp, oah, owh, uvp, ucp
+### 2. Measurement & 3. Protection
 
-### Debug Commands
+`status`-style readouts, plus protection setup (LVP/OVP/OCP/OPP/OTP/OHP/OAH/OWH, power-on state) and protection clear.
 
-The project supports direct register access for debugging and advanced usage:
+### 4. Settings
 
-- `read addr count` - Read 'count' registers starting at address 'addr'
-- `write addr value` - Write 'value' to register at address 'addr'
-- `writes addr v1 v2 ...` - Write multiple values to consecutive registers
+`beeper`, `brightness`, `tempunit`, `sleep`, `slave`, `baud`, `rxpin`/`txpin`, `mppt`/`mpptthr`, `default` (factory reset), `save`, `saveconfig`, `showsettings`.
 
-Examples:
-- `read 0x0000 1` - Read the voltage setting register (result shows different scaling factors)
-- `write 0x0000 1250` - Set voltage to 12.50V (1250/100)
-- `read 0x0002 3` - Read output voltage, current, and power
+### 7. WiFi Settings
 
-Addresses can be provided in decimal or hexadecimal (with 0x prefix).
+`scan`, `connect "ssid" "pass"`, `ap`, `exit`, `status`, `ip`, `savedwifi`, `addwifi "ssid" "pass" [priority]`, `syncwifi`, `repairwifi`.
+
+### 5. Debug (Register R/W)
+
+Direct register access for discovering undocumented features:
+
+- `read addr` / `readhex addr` — read a holding register
+- `write addr value` / `writehex addr value` — write one register
+- `mwrite reg1 val1 reg2 val2 ...` — write several registers
+- `wblock start count v1 v2 ...` — write a contiguous block in one FC16 request
+- `raw func addr count` — raw read of any register block
+- `read4 addr` / `read4hex addr` — read an **input register** (FC04)
+- `scan start end` — scan holding registers; `scan4 start end` — scan input registers
+- `compare start end` — two-pass discovery: snapshot, then detect which registers change when you change a setting on the device
+- `sniff [seconds]` — non-blocking bus sniffer: capture unsolicited frames the PSU sends to its WiFi module
+- `writetrial reg start end delay` — try writing a range of values to a register
+- `writerange start end value delay` — write a value across a register range
+- `weather [code] [tHigh] [tLow] [tNow] [hum]` — manually write today's weather to the RTC block; `weather off/on` — toggle manual mode
+- `weatherscan [start] [end]` — auto-cycle weather icon codes every second (film the screensaver to map codes)
+
+Addresses may be decimal or hex (`0x` prefix).
 
 ## Register Map
 
-The power supply uses the following register map (partial list):
+Holding registers (function 0x03), partial list:
 
 | Address | Description | Unit | Scaling | R/W |
 |---------|-------------|------|---------|-----|
-| 0x0000  | Voltage setting | V | /100 | R/W |
-| 0x0001  | Current setting | A | /1000 | R/W |
+| 0x0000  | Voltage setting (working) | V | /100 | R/W |
+| 0x0001  | Current setting (working) | A | /1000 | R/W |
 | 0x0002  | Output voltage | V | /100 | R |
 | 0x0003  | Output current | A | /1000 | R |
 | 0x0004  | Output power | W | /100 | R |
-| 0x0012  | Output on/off | 0/1 | - | R/W |
+| 0x0005  | Input voltage | V | /100 | R |
+| 0x0006–0x0007 | Amp-hours (low/high) | Ah | ×0.01 | R |
+| 0x0008–0x0009 | Watt-hours (low/high) | Wh | ×0.01 | R |
+| 0x000A–0x000C | Output time (h/m/s) | s | – | R |
+| 0x000D–0x000E | Internal / external temp | °C/°F | /10 | R |
+| 0x000F  | Key lock | 0/1 | – | R/W |
+| 0x0010  | Protection status (0=normal, 1=OVP, …) | – | – | R/W |
+| 0x0011  | CC/CV mode flag | – | – | R |
+| 0x0012  | Output on/off | 0/1 | – | R/W |
+| 0x0013  | Temperature unit (0=°C, 1=°F) | – | – | R/W |
+| 0x0014  | Backlight brightness | – | – | R/W |
+| 0x0015  | Sleep timeout | min | – | R/W |
+| 0x0016–0x0017 | Model / firmware version | – | – | R |
+| 0x0018–0x0019 | Slave address / baudrate code | – | – | R/W |
+| 0x001C  | Beeper | 0/1 | – | R/W |
+| 0x001D  | Active memory group (M0–M9) | – | – | R/W |
+| 0x001F  | MPPT enable | 0/1 | – | R/W |
+| 0x0020  | MPPT threshold | – | /100 | R/W |
+| 0x0021  | Battery cutoff current (legacy BTF) | A | /1000 | R/W |
+| 0x0022–0x0023 | CP mode enable / power set | W | /10 | R/W |
+| 0x0029–0x002D | BCH enable/threshold, BTF enable/cutoff, CLOF enable | – | – | R/W |
+| 0x0030–0x0034 | WiFi module host block: MASTER (`0x3B3A`), WIFI-CONFIG, WIFI-STATUS, IPV4 high/low | – | – | R/W |
+| 0x0050–0x005E | Profile registers: CV/CC set, LVP, OVP, OCP, OPP, OHP, OAH, OWH, OTP, power-on init, ETP | – | – | R/W |
+| 0x0050 + N×0x10 | Memory group N profile block (15 registers) | – | – | R/W |
+| 0x0200–0x0214 | RTC/weather block (time, status, today + 3-day forecast) | – | – | R/W |
 
-For a more complete register map, see the XY-SKxxx library documentation.
+For the complete map see `lib/XY-SKxxx/XY-SKxxx.h` and the docs in `documentation/`.
 
 ## Building
 
-This project uses PlatformIO. To build and upload:
+This project uses PlatformIO. Build and upload firmware + filesystem:
 
 ```
-pio run -t upload
+pio run -t upload            # build & upload firmware
+pio run -t uploadfs          # build & upload the LittleFS web UI
 ```
 
-## Building the CSS
+Select the board environment (`seeed_xiao_esp32s3` default, `seeed_xiao_esp32c3` for the C3). Useful custom targets:
 
-The project uses Tailwind CSS for styling. To build the CSS:
-
-1. Make sure you have Node.js and npm installed
-2. Run the build script:
-   ```bash
-   # Make the script executable (first time only)
-   chmod +x build-css.sh
-   
-   # Run the build script
-   ./build-css.sh
-   ```
-
-3. For development with auto-reloading:
-   ```bash
-   npm run watch:css
-   ```
-
-This will generate the `data/css/tailwind.css` file used by the application.
-
-## Developer Guide: Adding Features to the Library
-
-This guide outlines the complete process of discovering, implementing, and exposing new features in the XY-SKxxx library.
-
-### 1. Feature Discovery Process
-
-#### Using Debug Mode to Scan Registers
-
-The first step in adding a new feature is discovering which Modbus registers control it:
-
-1. **Access the Debug Menu via Serial Monitor**:
-   ```
-   menu
-   5
-   ```
-
-2. **Scan Register Ranges**:
-   ```
-   scan 0x0000 0x0030
-   ```
-   This examines registers in blocks. For example, configuration registers are typically found in 0x0000-0x0030, while protection settings often appear in 0x0050-0x0080.
-
-3. **Record Initial Values**:
-   Take note of all current register values before making any changes.
-
-#### Verify Register Function via OSD Testing
-
-1. **Change Settings via Device Screen**:
-   - Modify the setting you're investigating through the device's physical interface
-   - Make small, known changes (e.g., change MPPT from OFF to ON)
-
-2. **Rescan Registers to Detect Changes**:
-   ```
-   scan 0x0000 0x0030
-   ```
-   Compare with your initial values to identify which register changed.
-
-3. **Validate with Direct Register Read/Write**:
-   ```
-   read 0x001F   # Example: reading MPPT enable register
-   ```
-
-4. **Test Writing to Register**:
-   ```
-   write 0x001F 1   # Example: enabling MPPT
-   ```
-   Verify the change takes effect on the device display.
-
-### 2. Implementing the Feature in the Library
-
-#### Step 1: Add Register Definitions
-
-Update `XY-SKxxx.h` with the new register definitions:
-
-```cpp
-// Add to register definitions section
-#define REG_MPPT_ENABLE 0x001F  // MPPT enable/disable, 2 bytes, 0 decimal places, unit: 0/1
-#define REG_MPPT_THRESHOLD 0x0020 // MPPT threshold percentage, 2 bytes, 2 decimal places, unit: ratio (0.00-1.00)
+```
+pio run -t custom_showsize   # firmware size breakdown
+pio run -t custom_showpart   # partition table info
 ```
 
-#### Step 2: Add Class Member Variables
+## Project Layout
 
-Add private member variables to store cached values:
-
-```cpp
-// Add to private section of XY_SKxxx class
-bool _mpptEnabled;         // MPPT enable state cache
-float _mpptThreshold;      // MPPT threshold cache
-```
-
-#### Step 3: Declare Interface Methods
-
-Add method declarations to the public interface:
-
-```cpp
-// Add to public section of XY_SKxxx class
-bool setMPPTEnable(bool enabled);
-bool getMPPTEnable(bool &enabled);
-bool setMPPTThreshold(float threshold);
-bool getMPPTThreshold(float &threshold);
-```
-
-#### Step 4: Implement Methods
-
-Create implementation in an appropriate file (e.g., `XY-SKxxx-settings.cpp`):
-
-```cpp
-/**
- * Enable or disable MPPT (Maximum Power Point Tracking)
- * 
- * @param enabled true to enable, false to disable
- * @return true if successful
- */
-bool XY_SKxxx::setMPPTEnable(bool enabled) {
-    waitForSilentInterval();
-    uint8_t result = modbus.writeSingleRegister(REG_MPPT_ENABLE, enabled ? 1 : 0);
-    _lastCommsTime = millis();
-    if (result == modbus.ku8MBSuccess) {
-        _mpptEnabled = enabled;  // Update cache
-        return true;
-    }
-    return false;
-}
-
-// Implement remaining methods...
-```
-
-### 3. Cache Management
-
-#### Step 1: Update Cache Methods
-
-Modify the cache update methods (e.g., in `XY-SKxxx-cache.cpp`):
-
-```cpp
-bool XY_SKxxx::updateCalibrationSettings(bool force) {
-    // ...existing code...
-    
-    // Read MPPT enable state
-    delay(_silentIntervalTime * 2);
-    result = modbus.readHoldingRegisters(REG_MPPT_ENABLE, 1);
-    if (result == modbus.ku8MBSuccess) {
-        _mpptEnabled = (modbus.getResponseBuffer(0) != 0);
-    }
-    
-    // Read MPPT threshold
-    delay(_silentIntervalTime * 2);
-    result = modbus.readHoldingRegisters(REG_MPPT_THRESHOLD, 1);
-    if (result == modbus.ku8MBSuccess) {
-        _mpptThreshold = modbus.getResponseBuffer(0) / 100.0f;
-    }
-    
-    // ...existing code...
-}
-```
-
-#### Step 2: Use Cache in Getter Methods
-
-Make getters use the cache:
-
-```cpp
-bool XY_SKxxx::getMPPTEnable(bool &enabled) {
-    // Try from cache first
-    if (updateCalibrationSettings(false)) {
-        enabled = _mpptEnabled;
-        return true;
-    }
-    
-    // If cache failed, read directly
-    // ...direct reading code...
-}
-```
-
-### 4. User Interface Integration
-
-#### Step 1: Add to Menu Display
-
-Update the relevant menu display function (e.g., `menu_settings.cpp`):
-
-```cpp
-void displaySettingsMenu() {
-    // ...existing code...
-    Serial.println("mppt [on/off] - Enable/disable MPPT (Maximum Power Point Tracking)");
-    Serial.println("mpptthr [value] - Set MPPT threshold (0-100%, default 80%)");
-    // ...existing code...
-}
-```
-
-#### Step 2: Add Command Handlers
-
-Implement the command handlers:
-
-```cpp
-void handleSettingsMenu(const String& input, XY_SKxxx* ps, XYModbusConfig& config) {
-    // ...existing code...
-    
-    else if (input.startsWith("mppt ")) {
-        String subCmd = input.substring(5);
-        subCmd.trim();
-        
-        if (subCmd == "on") {
-            if (ps->setMPPTEnable(true)) {
-                Serial.println("MPPT enabled");
-            } else {
-                Serial.println("Failed to enable MPPT");
-            }
-        } else if (subCmd == "off") {
-            if (ps->setMPPTEnable(false)) {
-                Serial.println("MPPT disabled");
-            } else {
-                Serial.println("Failed to disable MPPT");
-            }
-        } else {
-            Serial.println("Invalid option. Use 'on' or 'off'");
-        }
-    }
-    
-    // ...handle other commands...
-}
-```
-
-#### Step 3: Add to Status Display
-
-Update status display to show the new feature:
-
-```cpp
-void displayDeviceStatus(XY_SKxxx* ps) {
-    // ...existing code...
-    
-    // Read MPPT status and threshold
-    bool mpptEnabled;
-    if (ps->getMPPTEnable(mpptEnabled)) {
-        Serial.print("MPPT Status: ");
-        Serial.println(mpptEnabled ? "ENABLED" : "DISABLED");
-        
-        if (mpptEnabled) {
-            float mpptThreshold;
-            if (ps->getMPPTThreshold(mpptThreshold)) {
-                Serial.print("MPPT Threshold: ");
-                Serial.print(mpptThreshold * 100, 0);
-                Serial.println("%");
-            }
-        }
-    }
-    
-    // ...existing code...
-}
-```
-
-### 5. Testing the New Feature
-
-1. **Compile and Flash**:
-   ```
-   pio run --target upload
-   ```
-
-2. **Test via Serial Monitor**:
-   ```
-   status       # Verify the feature appears in status output
-   menu 4       # Go to settings menu
-   mppt on      # Enable MPPT
-   mpptthr 85   # Set threshold to 85%
-   status       # Confirm changes are reflected
-   ```
-
-3. **Verify on Device**:
-   Confirm the settings changed on the device's physical display.
-
----
-
-**Note:** The serial monitor interface is just one example of how to expose the library features. The same library methods can be used in other interfaces such as web APIs, MQTT clients, or custom applications. The core XY-SKxxx library is designed to be interface-agnostic.
+- `src/main.cpp` — boot, WiFi stabilization, background tasks (WiFi host keep-alive, weather fetch, RTC/weather sync)
+- `src/web_interface/` — HTTP routes + WebSocket command handling
+- `src/modbus/` — RTC/weather sync (`rtc_weather.*`) and Open-Meteo client (`weather_api.*`)
+- `src/serial_interface/` — serial menu system
+- `src/wifi_interface/` — WiFiManager wrapper, credentials storage
+- `src/config/` — NVS/LittleFS configuration
+- `lib/XY-SKxxx/` — XY-SKxxx Modbus register library
+- `data/` — web UI (`index.html`, `main.js`, `style.css`)
 
 ## License
 

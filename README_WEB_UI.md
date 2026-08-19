@@ -1,420 +1,188 @@
-# XY-SK120 Web UI Development Guide
+# XY-SK120 Web UI Guide
 
-This document explains the components and patterns used in the XY-SK120 Web UI, focusing on how to maintain and extend the interface in a consistent way.
+The web interface is a self-contained single-page app served from the ESP32's LittleFS. It requires no build step, no framework and no network access — everything lives in three files under `data/`:
+
+| File | Purpose |
+|------|---------|
+| `data/index.html` | Single HTML page with all three tabs |
+| `data/main.js` | All logic: WebSocket, rendering, actions, routing, multi-device |
+| `data/style.css` | All styles (hand-written, no framework) |
 
 ## Table of Contents
 
-- [Tab Component System](#tab-component-system)
-- [CSS Implementation with Tailwind](#css-implementation-with-tailwind)
-- [Adding New Tabs](#adding-new-tabs)
-- [Responsive Design](#responsive-design)
-- [Component Reference](#component-reference)
-- [Dark Mode Support](#dark-mode-support)
-- [WebSocket Handling](#websocket-handling)
-- [JavaScript Module Pattern](#javascript-module-pattern)
-- [Error Handling Best Practices](#error-handling-best-practices)
-
-## Tab Component System
-
-The Web UI uses a reusable tab component system based on the Meraki UI "Line with Icons" design pattern. The system supports proper accessibility through ARIA attributes and maintains state persistence through localStorage.
-
-### How Tabs Work
-
-The tab system consists of two main parts:
-
-1. **Tab Navigation** - A set of buttons with the `role="tab"` attribute
-2. **Tab Panels** - Content areas with the `role="tabpanel"` attribute
-
-Each tab group is contained in a `div` with a `data-tabs` attribute that identifies the group.
-
-### Tab Initialization
-
-Tab groups are initialized automatically during page load via the `initAllTabGroups()` function in `tab_component.js`. The system finds all containers with the `data-tabs` attribute and initializes them.
-
-### Tab State Persistence
-
-The system automatically saves the last active tab for each group in localStorage using:
-- `lastActiveTab-{groupId}` for the newer component-based tabs
-- `lastActiveTab` and `lastActiveSettingsTab` for backward compatibility with older tab implementations
-
-## CSS Implementation with Tailwind
-
-The Web UI uses Tailwind CSS for styling. Custom components follow these best practices:
-
-### Tab Styling
-
-Tabs use these Tailwind CSS classes for consistent styling:
-
-```html
-<button role="tab" aria-selected="false"
-    class="inline-flex items-center h-10 px-2 py-2 -mb-px text-center bg-transparent border-b-2 border-transparent sm:px-4 whitespace-nowrap focus:outline-none hover:border-gray-400 dark:hover:border-gray-500 dark:text-gray-400 text-gray-500">
-    <svg class="w-4 h-4 mx-1 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <!-- SVG path data -->
-    </svg>
-    <span class="mx-1 text-sm sm:text-base">Tab Label</span>
-</button>
-```
-
-Active tab state:
-
-```html
-<button role="tab" aria-selected="true"
-    class="inline-flex items-center h-10 px-2 py-2 -mb-px text-center bg-transparent border-b-2 border-blue-500 sm:px-4 whitespace-nowrap focus:outline-none dark:text-blue-300 dark:border-blue-400 text-blue-600">
-    <svg class="w-4 h-4 mx-1 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <!-- SVG path data -->
-    </svg>
-    <span class="mx-1 text-sm sm:text-base">Active Tab</span>
-</button>
-```
-
-## Adding New Tabs
-
-You can add new tab groups in two ways:
-
-### 1. HTML-Based Approach (Recommended for Static Content)
-
-```html
-<div data-tabs="your-tab-group-id">
-    <!-- Tab navigation -->
-    <div class="flex overflow-x-auto overflow-y-hidden border-b border-gray-200 whitespace-nowrap dark:border-gray-700" role="tablist" aria-label="Your tab group description">
-        <!-- First tab (initially active) -->
-        <button id="tab-id-1" role="tab" aria-selected="true" aria-controls="panel-id-1" 
-            class="inline-flex items-center h-10 px-2 py-2 -mb-px text-center bg-transparent border-b-2 border-blue-500 sm:px-4 dark:text-blue-300 dark:border-blue-400 text-blue-600 whitespace-nowrap focus:outline-none">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 mx-1 sm:w-6 sm:h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <!-- SVG path data here -->
-            </svg>
-            <span class="mx-1 text-sm sm:text-base">Tab 1</span>
-        </button>
-        
-        <!-- Second tab (initially inactive) -->
-        <button id="tab-id-2" role="tab" aria-selected="false" aria-controls="panel-id-2" 
-            class="inline-flex items-center h-10 px-2 py-2 -mb-px text-center bg-transparent border-b-2 border-transparent sm:px-4 dark:text-white text-gray-700 whitespace-nowrap focus:outline-none hover:border-gray-400">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 mx-1 sm:w-6 sm:h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <!-- SVG path data here -->
-            </svg>
-            <span class="mx-1 text-sm sm:text-base">Tab 2</span>
-        </button>
-    </div>
-    
-    <!-- Tab panels -->
-    <div id="panel-id-1" role="tabpanel" aria-labelledby="tab-id-1" tabindex="0" aria-hidden="false" class="p-4">
-        <!-- Tab 1 content here -->
-    </div>
-    
-    <div id="panel-id-2" role="tabpanel" aria-labelledby="tab-id-2" tabindex="0" aria-hidden="true" class="hidden p-4">
-        <!-- Tab 2 content here -->
-    </div>
-</div>
-```
-
-### 2. JavaScript-Based Approach (For Dynamic Content)
-
-You can create tabs programmatically using the `createTabGroup()` helper function:
-
-```javascript
-document.addEventListener('DOMContentLoaded', function() {
-    // Define your tabs
-    const exampleTabs = [
-        {
-            id: 'tab-example1',
-            label: 'Example 1',
-            icon: '<svg class="w-4 h-4 mx-1 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 14v3m4-3v3m4-3v3M3 21h18M3 10h18M3 7l9-4 9 4M4 10h16v11H4V10z"></path></svg>',
-            panelId: 'panel-example1'
-        },
-        {
-            id: 'tab-example2',
-            label: 'Example 2',
-            icon: '<svg class="w-4 h-4 mx-1 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>',
-            panelId: 'panel-example1'
-        }
-    ];
-    
-    // Get the container element
-    const container = document.getElementById('my-tab-container');
-    if (container) {
-        // Create and insert the tab HTML
-        container.innerHTML = window.createTabGroup('example-tabs', 'example', exampleTabs);
-        
-        // Add content to the panels
-        document.getElementById('panel-example1').innerHTML = '<p>Content for tab 1</p>';
-        document.getElementById('panel-example2').innerHTML = '<p>Content for tab 2</p>';
-        
-        // Initialize the tabs
-        window.initTabGroup('example');
-    }
-});
-```
-
-## Responsive Design
-
-The tab component has been designed to be responsive across different screen sizes:
-
-### Mobile (< 640px)
-- Smaller icons (16x16px)
-- Smaller text (14px) with abbreviations for mode tabs (CV, CC, CP)
-- Reduced horizontal padding
-- Equal width tabs for mode selection (flex-1)
-- Horizontally scrollable tab list for many tabs
-
-### Tablet/Desktop (≥ 640px)
-- Larger icons (20x20px or 24x24px)
-- Larger text (16px) with full labels
-- More horizontal padding
-- Still horizontally scrollable if needed
-
-### Mode Tab Optimization
+- [Architecture](#architecture)
+- [HTTP Endpoints](#http-endpoints)
+- [WebSocket Protocol](#websocket-protocol)
+  - [Status push (`statusResponse`)](#status-push-statusresponse)
+  - [Client actions](#client-actions)
+  - [Handling responses](#handling-responses)
+- [Tabs & Routing](#tabs--routing)
+- [Multi-Device Support](#multi-device-support)
+- [Adding a New Control](#adding-a-new-control)
+
+## Architecture
+
+The UI follows one simple rule: **the server pushes live data, the client sends commands.**
+
+1. The ESP32 polls the PSU every ~250 ms (`pollAndBroadcastPSUStatus()` in `web_interface.cpp`) and broadcasts a `statusResponse` JSON frame to every connected WebSocket client **only when the status actually changed**.
+2. `main.js` keeps one `handleMessage()` switch that renders any incoming action.
+3. User actions send small JSON commands over the same WebSocket; the server replies with `<action>Response` frames and the loop poller then pushes the refreshed state to everyone.
+
+There is no `fetch()` polling loop in the client — the ESP32 is the source of truth and the only writer to the page.
+
+## HTTP Endpoints
+
+Served by `setupWebServer()` in `src/web_interface/web_interface.cpp`:
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/` | `index.html` |
+| GET | `/style.css`, `/main.js` | static assets |
+| GET | `/api/data` | current PSU output status (voltage/current/power/output on) |
+| GET | `/api/config` | device configuration (name, Modbus id, baud, parity, …) |
+| POST | `/api/config` | update + persist configuration |
+| GET | `/api/timezone` | `{ timeZones: [...], current: {...} }` |
+| POST | `/api/timezone` | body `{ "index": <n> }` → set timezone |
+| GET | `/health`, `/ping` | plain-text health checks |
+| WS | `/ws` | WebSocket endpoint for everything else |
+
+Static files are served via `handleFileRead()` for any path that exists on LittleFS.
+
+## WebSocket Protocol
+
+All messages are JSON. The client connects to `ws://<host>/ws` (see `connect()` in `main.js`) and sends commands through the single `send(obj)` helper. The server dispatches on `action`.
+
+### Status push (`statusResponse`)
+
+Sent automatically on connect and whenever PSU state changes. Field summary:
+
+| Field | Description |
+|-------|-------------|
+| `connected` | false if the PSU did not respond |
+| `voltage`, `current`, `power` | live output values |
+| `voltageSet`, `currentSet`, `powerSet` | working setpoints |
+| `operatingMode` | `CV`, `CC`, `CP` |
+| `outputEnabled` | output on/off |
+| `protectionStatus` | 0 = normal, >0 = protection code |
+| `inputVoltage` | Uin |
+| `ampHours`, `wattHours`, `outputTime` | energy counters |
+| `internalTemp`, `externalTemp`, `tempCelsius` | temperatures |
+| `model`, `version` | device identity |
+| `keyLockEnabled`, `beeper`, `backlight`, `sleepTimeout` | device state |
+| `slaveAddress`, `baudRateCode`, `memoryGroup` | Modbus + group |
+| `mpptEnabled`, `mpptThreshold`, `batteryCutoff` | MPPT / battery |
+| `cpModeEnabled`, `outputOnAtStartup`, `etp` | misc settings |
+| `bchEnabled`, `bchThreshold`, `btfEnabled`, `btfCutoff`, `clofEnabled` | battery charging/output-off settings |
+| `hostType`, `wifiConfig`, `wifiStatus`, `ipv4` | PSU WiFi module host block |
+| `lvp`, `ovp`, `ocp`, `opp`, `otp` | protection thresholds |
+| `ohpHours`, `ohpMinutes`, `overAmpHours`, `overWattHours` | extended protection |
+| `deviceName` | configured device name |
+
+### Client actions
+
+**Output & setpoints**
+
+| Action | Payload | Response |
+|--------|---------|----------|
+| `powerOutput` | `{ enable: bool }` | `powerOutputResponse` |
+| `setVoltage` | `{ voltage }` | `setVoltageResponse` |
+| `setCurrent` | `{ current }` | `setCurrentResponse` |
+| `setPower` | `{ power }` | `setPowerResponse` |
+| `setConstantVoltage` / `setConstantCurrent` / `setConstantPower` | value | matching `...Response` |
+| `setConstantPowerMode` | `{ enable }` | `constantPowerModeResponse` |
+| `setKeyLock` | `{ lock }` | `keyLockResponse` / `setKeyLockResponse` |
+| `getKeyLockStatus` | – | `keyLockStatusResponse` |
+| `getStatus` / `getData` | – | `statusResponse` |
+| `getOperatingMode` | – | `operatingModeResponse` |
+
+**Protection & settings** (all handled by `handleDeviceSettingAction`, respond with `<action>Response`)
+
+| Action | Payload |
+|--------|---------|
+| `setProtection` | `{ key: "lvp"\|"ovp"\|"ocp"\|"opp"\|"otp", value }` |
+| `setBacklight` | `{ level }` |
+| `setSleepTimeout` | `{ minutes }` |
+| `setSlaveAddress` | `{ address }` |
+| `setBaudRate` | `{ code }` |
+| `setTempUnit` | `{ celsius }` |
+| `setBeeper` | `{ enabled }` |
+| `setMppt` | `{ enable, threshold }` |
+| `setBatteryCutoff` | `{ current }` |
+| `setBch` | `{ enabled, threshold }` |
+| `setBtfEnable` | `{ enabled }` |
+| `setBtfCutoff` | `{ current }` |
+| `setClof` | `{ enabled }` |
+| `setPowerOnInit` | `{ enabled }` |
+| `setCpMode` | `{ enabled }` |
+| `setOhp` | `{ hours, minutes }` |
+| `setOha` | `{ ampHours }` |
+| `setOwh` | `{ wattHours }` |
+| `setMemoryGroup` | `{ group }` (recall M0–M9) |
+| `getMemoryGroup` | `{ group }` → `memoryGroupData` with the full profile |
+| `saveMemoryGroup` | `{ group, voltageSet, currentSet, lvp, ovp, ocp, opp, ohpHours, ohpMinutes, overAmpHours, overWattHours, otp, etp, outputOnAtStartup }` |
+| `psuReset` | – (factory defaults) |
+| `clearProtection` | – |
 
-For operating mode tabs, we use abbreviations on mobile to save space:
+**WiFi & system**
 
-```html
-<button data-mode="cv" class="mode-tab flex-1 ...">
-    <svg ... ></svg>
-    <span class="mx-1 text-sm sm:text-base">
-        <span class="hidden sm:inline">Constant Voltage</span>
-        <span class="sm:hidden">CV</span>
-    </span>
-</button>
-```
+| Action | Payload | Response |
+|--------|---------|----------|
+| `getWifiStatus` | – | `wifiStatusResponse` |
+| `addWifiNetwork` | `{ ssid, password, priority }` | `addWifiNetworkResponse` |
+| `saveWifiCredentials` | `{ ssid, password }` | `saveWifiCredentialsResponse` |
+| `loadWifiCredentials` | – | `loadWifiCredentialsResponse` |
+| `removeWifiNetwork` | `{ index, ssid?, deleteMode? }` | `removeWifiNetworkResponse` |
+| `updateWifiPriority` | `{ index, priority }` | `updateWifiPriorityResponse` |
+| `connectWifi` | `{ ssid, password }` | `connectWifiResponse` |
+| `resetWifi` | – | `resetWifiResponse` |
+| `getTimeZones` | – | `timeZonesResponse` (`timeZones`, `current`) |
+| `setTimeZone` | `{ index }` | `setTimeZoneResponse` |
+| `restart` | – | `restartResponse`, then ESP restarts |
+| `ping` | – | `pong` |
 
-This approach:
-- Shows only "CV", "CC", and "CP" on mobile screens
-- Expands to "Constant Voltage", "Constant Current", and "Constant Power" on larger screens
-- Uses the `flex-1` class to make all tabs equal width
-- Eliminates the need for horizontal scrolling on most devices
-
-### CSS Media Queries
-
-The responsive behavior is achieved through Tailwind's `sm:` prefix which applies styles at screen widths of 640px and above:
-
-```css
-/* Base styles (mobile) */
-.w-4 h-4 /* 16px icons */
-.text-sm /* 14px text */
-.px-2 /* 8px horizontal padding */
-
-/* Tablet/desktop styles (640px and above) */
-.sm:w-6 sm:h-6 /* 24px icons */
-.sm:text-base /* 16px text */
-.sm:px-4 /* 16px horizontal padding */
-```
+### Handling responses
 
-### Testing Responsive Behavior
+All incoming frames go through `handleMessage(raw)` in `main.js`, which switches on `msg.action`. Conventions:
 
-Always test tab behavior at various screen sizes, from small phones (~320px) to large desktops. The tab component should:
-- Maintain consistent vertical spacing at all sizes
-- Show all content comfortably at larger sizes
-- Allow horizontal scrolling to access all tabs on small screens
+- Every command response ends in `Response` and carries `success: bool`.
+- `statusResponse` is handled by `renderStatus()` which fills every field that has a matching DOM element (it also ignores elements the user is currently editing — see "dirty" tracking below).
+- Errors surface as toasts: any `<action>Response` with `success === false` and an `error` string shows a toast automatically.
 
-## Component Reference
+## Tabs & Routing
 
-### Main Tab Components
+The app is a single page with three `<tab>` panels and a bottom nav bar. Routing is hash-based (`#main`, `#prot`, `#cfg`):
 
-The Web UI includes these tab-based components:
+- `switchTab(tab)` shows the matching `#page-<tab>` element and updates the nav.
+- `initTab()` reads `location.hash` on load and on every `hashchange` event.
 
-1. **Settings Tabs** - For device, UI, WiFi, and device management settings
-2. **Mode Tabs** - For switching between Constant Voltage (CV), Constant Current (CC), and Constant Power (CP) modes
-
-### Extending Existing Components
-
-When adding new tabs to existing components, follow the established pattern:
-
-1. Add a new tab button with proper ARIA attributes
-2. Add a corresponding tab panel
-3. Ensure the new tab uses the same styling classes as existing tabs
-
-## Dark Mode Support
-
-The Web UI fully supports dark mode, which can be toggled in the Web UI settings and is persisted in localStorage.
-
-### Dark Mode-Compatible Styles
-
-When adding new components, ensure they're dark mode compatible by using the Tailwind dark mode classes:
-
-```html
-<div class="bg-white dark:bg-gray-800 text-gray-800 dark:text-white">
-    <!-- Your component content here -->
-</div>
-```
-
-Classes to use for consistent dark mode support:
-
-- Background colors: `bg-white dark:bg-gray-800` (primary), `bg-gray-50 dark:bg-gray-700` (secondary)
-- Text colors: `text-gray-800 dark:text-white` (primary), `text-gray-600 dark:text-gray-300` (secondary)
-- Border colors: `border-gray-200 dark:border-gray-700`
-- Form input background: `bg-white dark:bg-gray-700`
-
-## WebSocket Handling
-
-The Web UI uses WebSockets for real-time communication with the XY-SK120 power supply. All WebSocket communication is now consolidated in `data/js/core.js`, which serves as the single source of truth for WebSocket initialization and message handling.
-
-### Core WebSocket Logic (`data/js/core.js`)
-
-*   **`initWebSocket()`:** Initializes the WebSocket connection and sets up event listeners for `open`, `close`, `error`, and `message` events.
-*   **`sendCommand(command)`:** Sends a JSON command to the power supply over the WebSocket connection.
-*   **`handleMessage(event)`:** Handles incoming WebSocket messages, parses the JSON data, and dispatches custom events for other modules to handle.
-
-### Module Communication
-
-Other JavaScript modules should not directly initialize or interact with the WebSocket connection. Instead, they should:
-
-1.  **Dispatch Custom Events:** When a module needs to send a command to the power supply, it should call the `window.sendCommand(command)` function.
-2.  **Handle Custom Events:** Modules should listen for custom events dispatched by `core.js` (e.g., `websocket-message`, `websocket-connected`, `websocket-disconnected`) and update their UI accordingly.
-
-### Example
-
-To send a command from a module:
-
-```javascript
-// In your module
-function setVoltage(voltage) {
-  window.sendCommand({ action: 'setVoltage', voltage: voltage });
-}
-```
-
-To handle a WebSocket message in a module:
-
-```javascript
-// In your module
-document.addEventListener('websocket-message', function(event) {
-  const data = event.detail;
-  if (data.action === 'voltageResponse') {
-    // Update UI with the new voltage value
-    updateVoltageDisplay(data.voltage);
-  }
-});
-```
-
-### Benefits of this Approach
-
-*   **Centralized WebSocket Logic:** Easier to maintain and debug WebSocket-related issues.
-*   **Loose Coupling:** Modules are decoupled from the WebSocket implementation, making the code more modular and testable.
-*   **Real-Time Updates:** WebSockets enable real-time updates of power supply status and settings in the UI.
-
-## JavaScript Module Pattern
-
-### Avoiding ES6 Modules
-
-The web interface for XY-SK120 is designed to work directly in the browser without build tools or transpilers. For this reason, we **avoid using ES6 module syntax** (`import`/`export`) which may not be supported in all browser environments, especially when served from an ESP32.
-
-**DON'T** use ES6 module syntax:
-```javascript
-// Don't do this
-export function myFunction() { ... }
-import { otherFunction } from './other_file.js';
-```
-
-### Using IIFE Pattern
-
-Instead, use the Immediately Invoked Function Expression (IIFE) pattern to create module-like scopes and expose functions via the global `window` object:
-
-**DO** use the IIFE pattern:
-```javascript
-// Do this instead
-(function() {
-    // Private scope - variables defined here are not accessible outside
-    let privateVariable = 'not accessible outside';
-    
-    // Function we want to make public
-    function publicFunction() {
-        console.log('This function will be accessible globally');
-    }
-    
-    // Expose functions to global scope via window object
-    window.myModule = {
-        publicFunction: publicFunction
-    };
-})();
-
-// Usage from another file:
-window.myModule.publicFunction();
-```
-
-## WebSocket Connection Management
-
-### Using window.whenWebsocketReady()
-
-Always use the `window.whenWebsocketReady()` helper method before sending WebSocket commands. This ensures requests are only made when the WebSocket connection is fully established, preventing errors and race conditions.
-
-```javascript
-// Correct way to send WebSocket commands
-function sendMyCommand() {
-    window.whenWebsocketReady(() => {
-        // This code will only execute when WebSocket is connected
-        window.sendCommand({
-            action: 'myAction',
-            data: 'myData'
-        });
-    });
-}
-```
-
-In contrast to the older approach:
-
-```javascript
-// Don't do this - may fail if connection isn't ready
-function sendMyCommand() {
-    // This might fail if WebSocket isn't connected yet
-    if (window.websocketConnected) {
-        window.sendCommand({
-            action: 'myAction',
-            data: 'myData'
-        });
-    }
-}
-```
-
-### Handling WebSocket Events
-
-For WebSocket events, use the standard event system:
-
-```javascript
-// Listen for WebSocket messages
-document.addEventListener('websocket-message', function(event) {
-    const data = event.detail;
-    if (data.action === 'myResponseAction') {
-        // Handle the response
-    }
-});
-
-// Listen for connection events
-document.addEventListener('websocket-connected', function() {
-    console.log('WebSocket connected, can now send commands');
-});
-
-document.addEventListener('websocket-disconnected', function() {
-    console.log('WebSocket disconnected, pause activities requiring connection');
-});
-```
-
-## Error Handling Best Practices
-
-Always handle promise rejections when using WebSocket communication:
-
-```javascript
-fetchDataFromDevice()
-    .then(data => {
-        // Handle successful response
-    })
-    .catch(error => {
-        console.warn("Error fetching data:", error.message);
-        // Show appropriate user feedback
-    });
-```
-
-By following these patterns, your code will be more robust and work reliably with the XY-SK120 device.
-
-## Icon Usage
-
-The Web UI uses SVG icons for a consistent look. When adding new icons:
-
-1. Use SVG icons with the proper sizing classes: `class="w-4 h-4 sm:w-5 sm:h-5"`
-2. Ensure icons use `currentColor` for proper color inheritance
-3. Keep stroke width consistent (typically `stroke-width="2"`)
-
-## JavaScript Files Reference
-
-- `tab_component.js` - Main tab implementation and helper functions
-- `core.js` - Core functionality for device communication
-- `web_interface.js` - Main UI interaction logic
-- `connectivity_check.js` - Connection monitoring
-- `log_viewer.js` - WebSocket log viewer functionality
+Tab structure in `index.html`:
+
+| Tab | id | Content |
+|-----|----|---------|
+| Главная | `#page-main` | live V/A/W display, mode + protection slot, setpoint inputs, memory-group recall, energy/temperature table |
+| Профили | `#page-prot` | full profile editor for the selected memory group (save / apply / cancel) |
+| Настройки | `#page-cfg` | device settings, PSU WiFi-module status, ESP32 WiFi, servers list, ESP restart |
+
+## Multi-Device Support
+
+`main.js` keeps a server list in `localStorage`:
+
+- `xypsu_servers` — array of `{ name, ip }`
+- `xypsu_current` — the active server IP
+
+The header `<select id="deviceSelect">` switches servers, and the "Серверы" card in the settings tab adds/removes them. On switch, `resetUi()` clears all live values and `connect()` opens a new WebSocket to the selected host. The current host is always prepended to the list, so the page works standalone.
+
+## Adding a New Control
+
+To expose a new PSU register in the UI:
+
+1. **Backend** — add an `else if` branch in `handleWebSocketMessage()` (or `handleDeviceSettingAction()` for settings/protection) in `src/web_interface/web_interface.cpp`. Read/write the register under `lockModbus() / unlockModbus()` and reply with a `<name>Response` frame.
+2. **UI** — if it should live-update, add the field to `renderStatus()` in `data/main.js`. Status fields are cheap to add: the frame already carries everything `readPSUStatusBatched()` reads.
+3. **Send** — add a send call via `send({ action: "...", ... })`, then handle the reply in `handleMessage()`.
+
+### Conventions
+
+- Always acquire the Modbus mutex (`lockModbus()`/`unlockModbus()`) around any PSU bus access — the status poller in `loop()` runs concurrently.
+- Keep `index.html` dependency-free and self-contained; no CDNs, no external fonts.
+- After changing `data/`, rebuild with `pio run -t uploadfs` and hard-refresh the browser.
+- The server broadcasts status only when the value changed — don't rely on responses alone if a control needs immediate visual feedback.
