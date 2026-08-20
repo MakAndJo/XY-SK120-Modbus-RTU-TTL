@@ -296,3 +296,32 @@ footer { padding: 12px; text-align: center; color: var(--muted); font-size: 0.8r
 @media (min-width: 700px) {
   #tabbar { width: 560px; left: 50%; right: auto; transform: translateX(-50%); border-radius: 14px 14px 0 0; overflow: hidden; }
 }
+
+/* ---- Login overlay ---- */
+#loginOverlay {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+}
+.login-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 24px;
+  width: min(320px, 90vw);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.login-card h1 { font-size: 1.4rem; text-align: center; }
+#loginMsg { color: var(--red); font-size: 0.85rem; min-height: 1em; text-align: center; }
+
+/* ---- Pair code card ---- */
+#pairCode {
+  font-variant-numeric: tabular-nums;
+  user-select: all;
+}

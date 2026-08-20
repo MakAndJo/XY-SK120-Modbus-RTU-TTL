@@ -185,7 +185,14 @@ void loop() {
   // Start MQTT as soon as WiFi is up. mqttStart() is idempotent, so this also
   // re-forwards the client after WiFi reconnects (the MQTT task itself keeps
   // reconnecting while connected() == false).
-  if (WiFi.status() == WL_CONNECTED) mqttStart();
+  if (WiFi.status() == WL_CONNECTED) {
+    mqttStart();
+    // Serve the embedded client + /api/* on the LAN IP so the block can be
+    // controlled directly (local mode) even while the broker is unreachable.
+    startLocalServer();
+  } else {
+    stopLocalServer();
+  }
 
   // Periodically read fresh PSU status and publish it over MQTT only when it
   // actually changed (retained, so the server/client always has the last one).
@@ -195,13 +202,9 @@ void loop() {
     mqttPublishStatus();
   }
 
-  // Sync the PSU RTC/weather block (Unix time + zeroed weather, ~10s like the
-  // OEM XY-WFPOW module does). Runs only after NTP has provided valid time.
-  static unsigned long lastRtcSync = 0;
-  if (millis() - lastRtcSync > 10000) {
-    lastRtcSync = millis();
-    syncRtcWeatherToPSU();
-  }
+  // NOTE: RTC/weather block sync is intentionally disabled — the block's
+  // weather display is unused (IP/code shows in the WiFi settings menu only)
+  // and the write fails on this PSU, spamming the log every 10s.
 
   // Check for WiFi reset button press during operation
   static unsigned long lastButtonCheck = 0;

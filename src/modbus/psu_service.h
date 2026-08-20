@@ -68,6 +68,10 @@ bool readPSUStatusBatched(PSUStatusData& data);
 // Build and serialize the status JSON (same schema the old web UI used).
 String buildStatusJSON(const PSUStatusData& data);
 
+// Local web server /api/status payload: the full status object plus identity,
+// MQTT config/state, WiFi info and the pair-code/bound state.
+String buildLocalStatusJSON();
+
 // PSU helper functions (thread-safe, lock internally).
 float getPSUVoltage(XY_SKxxx* powerSupply);
 float getPSUCurrent(XY_SKxxx* powerSupply);

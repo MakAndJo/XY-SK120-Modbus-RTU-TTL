@@ -1,6 +1,10 @@
 const $ = (id) => document.getElementById(id);
 const fmt = (v, d = 2) => (isNaN(v) ? "--" : Number(v).toFixed(d));
 
+// ---- Mode: 'local' (device-served) or 'server' (broker client) ----
+let mode = 'server';
+let token = localStorage.getItem('xypsu_token') || '';
+
 // ---- WiFi module (host 0x0030-0x0034) formatters ----
 function formatHostType(v) {
   if (v == null || v === 0) return "отсутствует";
@@ -15,7 +19,7 @@ function formatWifiConfig(v) {
 }
 function formatWifiStatus(v) {
   if (v == null || v === 0) return "0 — сеть недействительна";
-  if (v === 1) return "1 — подключено к роутеру";
+  if (v === 1) return "1 — локально (роутер)";
   if (v === 2) return "2 — подключено к серверу";
   if (v === 3) return "3 — Touch pairing";
   if (v === 4) return "4 — AP pairing";
@@ -26,80 +30,46 @@ function formatIpv4(v) {
   return [((v >>> 24) & 255), ((v >>> 16) & 255), ((v >>> 8) & 255), (v & 255)].join(".");
 }
 
-// ---- Multi-instance: several bound PSU devices (blocks) saved in localStorage ----
-const DEVICES_KEY = "xypsu_devices";
+// ---- Devices: server mode lists the account's bound blocks ----
 const CURRENT_KEY = "xypsu_current";
-let devices = []; // [{ deviceId, name }]
-let onlineState = {}; // deviceId -> true/false (last known online state)
-let boundDeviceId = localStorage.getItem(CURRENT_KEY) || "";
-
-function loadDevices() {
-  try {
-    const raw = localStorage.getItem(DEVICES_KEY);
-    devices = raw ? JSON.parse(raw) : [];
-  } catch { devices = []; }
-  if (!Array.isArray(devices)) devices = [];
-  // Migrate the single bind saved under the old per-server key(s). The old
-  // client stored it as xypsu_bind_<currentIp>, where currentIp defaulted to
-  // location.host but could be any saved server IP.
-  if (!devices.length) {
-    // Old client stored the bind as xypsu_bind_<currentIp> where currentIp was
-    // location.host by default but could be any previously saved server IP.
-    // Scan every such key so the device shows up regardless of which host was
-    // used when it was first bound.
-    try {
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (!k || k.indexOf("xypsu_bind_") !== 0) continue;
-        const old = JSON.parse(localStorage.getItem(k));
-        if (old && old.deviceId) {
-          devices.push({ deviceId: old.deviceId, name: old.name || old.deviceId });
-          break;
-        }
-      }
-    } catch {}
-  }
-  if (!devices.some((d) => d.deviceId === boundDeviceId)) {
-    // No/invalid current device: fall back to the first saved one (or none)
-    boundDeviceId = devices.length ? devices[0].deviceId : "";
-    if (boundDeviceId) { try { localStorage.setItem(CURRENT_KEY, boundDeviceId); } catch {} }
-  }
-  saveDevices();
-}
-
-function saveDevices() {
-  try { localStorage.setItem(DEVICES_KEY, JSON.stringify(devices)); } catch {}
-}
+let devices = []; // [{ deviceId, name, model, online }]
+let onlineState = {}; // deviceId -> true/false
+let boundDeviceId = "";
 
 function deviceName(deviceId) {
   const d = devices.find((x) => x.deviceId === deviceId);
   return d ? d.name : deviceId;
 }
 
-function upsertDevice(deviceId, name) {
+function upsertDevice(deviceId, name, model) {
   const d = devices.find((x) => x.deviceId === deviceId);
-  if (d) d.name = name || d.name;
-  else devices.push({ deviceId, name: name || deviceId });
-  saveDevices();
+  if (d) { d.name = name || d.name; d.model = model || d.model; }
+  else devices.push({ deviceId, name: name || deviceId, model: model || "XY-SK150S" });
 }
 
 function renderDeviceSelect() {
   const sel = $("deviceSelect");
-  if (!sel) return;
-  sel.innerHTML = "";
-  if (!devices.length) {
-    const opt = document.createElement("option");
-    opt.value = "";
-    opt.textContent = "— нет устройств —";
-    sel.appendChild(opt);
+  if (sel) {
+    sel.innerHTML = "";
+    if (mode === "local") {
+      sel.style.display = "none";
+    } else {
+      sel.style.display = "";
+      if (!devices.length) {
+        const opt = document.createElement("option");
+        opt.value = "";
+        opt.textContent = "— нет устройств —";
+        sel.appendChild(opt);
+      }
+      devices.forEach((d) => {
+        const opt = document.createElement("option");
+        opt.value = d.deviceId;
+        opt.textContent = `${d.name} (${d.deviceId})`;
+        if (d.deviceId === boundDeviceId) opt.selected = true;
+        sel.appendChild(opt);
+      });
+    }
   }
-  devices.forEach((d) => {
-    const opt = document.createElement("option");
-    opt.value = d.deviceId;
-    opt.textContent = `${d.name} (${d.deviceId})`;
-    if (d.deviceId === boundDeviceId) opt.selected = true;
-    sel.appendChild(opt);
-  });
   $("deviceName").textContent = boundDeviceId ? deviceName(boundDeviceId) : "XY PSU";
   renderServersList();
 }
@@ -108,12 +78,22 @@ function renderServersList() {
   const tbody = $("serversList");
   if (!tbody) return;
   tbody.innerHTML = "";
+  if (mode === "local") {
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = 2;
+    td.style.color = "var(--muted)";
+    td.textContent = "Этот блок управляется напрямую (без сервера).";
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+    return;
+  }
   if (!devices.length) {
     const tr = document.createElement("tr");
     const td = document.createElement("td");
     td.colSpan = 2;
     td.style.color = "var(--muted)";
-    td.textContent = "Нет привязанных устройств. Введите код привязки (с экрана настройки БП) и нажмите «+».";
+    td.textContent = "Нет привязанных устройств. Введите 8-значный код с экрана блока.";
     tr.appendChild(td);
     tbody.appendChild(tr);
     return;
@@ -134,12 +114,17 @@ function renderServersList() {
     tr.appendChild(label);
     const ctrl = document.createElement("td");
     ctrl.className = "ctrl";
+    const renameBtn = document.createElement("button");
+    renameBtn.className = "btn btn-sm btn-ghost";
+    renameBtn.textContent = "Переим.";
+    renameBtn.addEventListener("click", () => renameDevice(d.deviceId));
     const delBtn = document.createElement("button");
     delBtn.className = "btn btn-sm btn-danger";
     delBtn.textContent = "Удалить";
     delBtn.addEventListener("click", () => {
-      if (confirm(`Удалить устройство ${d.name} (${d.deviceId})?`)) removeDevice(d.deviceId);
+      if (confirm(`Отвязать устройство ${d.name} (${d.deviceId})?`)) removeDevice(d.deviceId);
     });
+    ctrl.appendChild(renameBtn);
     ctrl.appendChild(delBtn);
     tr.appendChild(ctrl);
     tbody.appendChild(tr);
@@ -163,31 +148,61 @@ function switchDevice(deviceId) {
   }
 }
 
-function addDevice(key) {
-  const k = (key || "").trim();
-  if (!k) { toast("Введите код привязки"); return; }
-  send({ type: "bind", key: k });
+async function addDevice(code) {
+  const k = String(code || "").replace(/\D/g, "");
+  if (k.length !== 8) { toast("Введите 8-значный код"); return; }
+  const r = await api("/api/bind", { method: "POST", body: JSON.stringify({ code: k }) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { toast(j.error || "Ошибка привязки"); return; }
+  upsertDevice(j.deviceId, j.name, j.model);
+  boundDeviceId = j.deviceId;
+  try { localStorage.setItem(CURRENT_KEY, j.deviceId); } catch {}
+  $("deviceName").textContent = j.name || deviceName(j.deviceId);
+  $("newCode").value = "";
+  renderDeviceSelect();
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    send({ type: "subscribe", deviceId: j.deviceId });
+    afterBind();
+  }
+  renderConn();
+  toast(`Привязано: ${j.deviceId}`);
 }
 
-function removeDevice(deviceId) {
+async function renameDevice(deviceId) {
+  const cur = deviceName(deviceId);
+  const name = prompt("Новое имя устройства:", cur);
+  if (name == null) return;
+  const trimmed = name.trim();
+  if (!trimmed) return;
+  const r = await api(`/api/devices/${deviceId}/rename`, { method: "POST", body: JSON.stringify({ name: trimmed }) });
+  if (!r.ok) { toast("Ошибка переименования"); return; }
+  upsertDevice(deviceId, trimmed);
+  renderDeviceSelect();
+}
+
+async function removeDevice(deviceId) {
   const wasCurrent = deviceId === boundDeviceId;
+  const r = await api(`/api/devices/${deviceId}`, { method: "DELETE" });
+  if (!r.ok) { toast("Ошибка отвязки"); return; }
   devices = devices.filter((d) => d.deviceId !== deviceId);
-  saveDevices();
+  onlineState[deviceId] = false;
   if (!devices.length) {
     boundDeviceId = "";
     try { localStorage.removeItem(CURRENT_KEY); } catch {}
     resetUi();
     renderDeviceSelect();
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      send({ type: "unsubscribe", deviceId });
-    }
+    if (ws && ws.readyState === WebSocket.OPEN) send({ type: "unsubscribe", deviceId });
     return;
   }
-  if (wasCurrent) {
-    switchDevice(devices[0].deviceId);
-  } else {
-    renderDeviceSelect();
-  }
+  if (wasCurrent) switchDevice(devices[0].deviceId);
+  else renderDeviceSelect();
+}
+
+// ---- REST helper (server mode) ----
+async function api(path, opts = {}) {
+  const headers = { "Content-Type": "application/json", ...(opts.headers || {}) };
+  if (token) headers["Authorization"] = "Bearer " + token;
+  return fetch(path, { ...opts, headers });
 }
 
 // Clear all live values so nothing from the previous device is shown
@@ -214,14 +229,15 @@ function resetUi() {
   if (btn) { btn.textContent = "ВКЛ"; btn.className = "btn btn-success"; }
 }
 
-// ---- WebSocket gateway: the server pushes fresh frames on its own ----
+// ---- Transport: WebSocket (server) OR direct HTTP (local) ----
 let ws = null;
 let connected = false;
 
 function connect() {
+  if (mode !== "server") return;
   const proto = location.protocol === "https:" ? "wss" : "ws";
   if (ws) { ws.onclose = null; try { ws.close(); } catch {} }
-  ws = new WebSocket(`${proto}://${location.host}/ws`);
+  ws = new WebSocket(`${proto}://${location.host}/ws?token=${encodeURIComponent(token)}`);
   ws.onopen = () => {
     connected = true;
     setConn(false);
@@ -242,10 +258,28 @@ function connect() {
 
 // Protocol frame ({type,...}) or a device command ({action,...})
 function send(obj) {
+  if (mode === "local") {
+    localCmd(obj);
+    return;
+  }
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
   if (obj && obj.type) { ws.send(JSON.stringify(obj)); return; }
   if (!boundDeviceId) return;
   ws.send(JSON.stringify({ type: "command", deviceId: boundDeviceId, payload: obj }));
+}
+
+// Local mode: the device itself answers commands over HTTP.
+async function localCmd(obj) {
+  try {
+    const r = await fetch("/api/cmd", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(obj),
+    });
+    if (!r.ok) return;
+    const resp = await r.json();
+    feedDeviceResponse(resp);
+  } catch {}
 }
 
 function afterBind() {
@@ -437,6 +471,39 @@ function renderStatus(s) {
   if (s.ipv4 != null && s.ipv4 > 0) $("wifiIpPsu").textContent = formatIpv4(s.ipv4);
   else $("wifiIpPsu").textContent = "--";
 
+  // Server (MQTT) card (local mode fills it via /api/status)
+  if (s.mqttHost != null) $("mqttHost").textContent = s.mqttHost;
+  if (s.mqttPort != null) $("mqttPort").textContent = s.mqttPort;
+  if (s.mqttConnected != null) $("mqttState").textContent = s.mqttConnected ? "подключён" : "не подключён";
+
+  // Connection code, shown explicitly in the Server card (local mode).
+  if (mode === "local" && s.bound != null) {
+    const pc = $("mqttPairCode");
+    if (pc) {
+      if (s.bound) pc.textContent = "привязан";
+      else if (s.pairCode) pc.textContent = s.pairCode;
+      else pc.textContent = "--";
+    }
+  }
+
+  // Pair code card (local mode: show the code until the block is bound)
+  if (s.bound != null && mode === "local") {
+    const card = $("pairCard");
+    const codeEl = $("pairCode");
+    const hint = $("pairHint");
+    if (card) {
+      if (s.bound) {
+        card.classList.add("hidden");
+      } else {
+        card.classList.remove("hidden");
+        if (codeEl) codeEl.textContent = s.pairCode || "--";
+        if (hint) hint.textContent = s.pairCode
+          ? "Введите этот код в приложении XY PSU → Устройства → Добавить"
+          : "Блок ещё не получил код — подождите или проверьте адрес сервера.";
+      }
+    }
+  }
+
   if (!configDirty) {
     lastConfig = {
       backlight: s.backlight != null ? String(s.backlight) : "",
@@ -583,7 +650,7 @@ function switchTab(tab) {
 // Restore the tab from the URL hash on load
 function initTab() {
   const tab = (location.hash || "").replace(/^#\//, "").replace(/^#/, "") || "main";
-  if (!["main", "prot", "cfg"].includes(tab)) tab = "main";
+  if (!["main", "prot", "cfg", "devices"].includes(tab)) tab = "main";
   switchTab(tab);
 }
 window.addEventListener("hashchange", initTab);
@@ -593,7 +660,7 @@ function handleMessage(raw) {
   let msg;
   try { msg = JSON.parse(raw); } catch { return; }
 
-  // New WS gateway frames: status / info / online / bindResult / response / error
+  // New WS gateway frames: status / info / online / response / error
   switch (msg.type) {
     case "status":
       // Never paint live-looking values for a block we know is offline: the
@@ -604,7 +671,7 @@ function handleMessage(raw) {
     case "info":
       if (msg.data) {
         if (msg.data.deviceId === boundDeviceId && msg.data.name) {
-          upsertDevice(msg.data.deviceId, msg.data.name);
+          upsertDevice(msg.data.deviceId, msg.data.name, msg.data.model);
           $("deviceName").textContent = msg.data.name;
         }
         renderServersList();
@@ -615,88 +682,80 @@ function handleMessage(raw) {
       renderServersList();
       renderConn();
       return;
-    case "bindResult":
-      if (msg.ok) {
-        upsertDevice(msg.deviceId, msg.name);
-        boundDeviceId = msg.deviceId;
-        try { localStorage.setItem(CURRENT_KEY, msg.deviceId); } catch {}
-        $("deviceName").textContent = msg.name || deviceName(msg.deviceId);
-        $("newKey").value = "";
-        renderDeviceSelect();
-        send({ type: "subscribe", deviceId: msg.deviceId });
-        afterBind();
-        renderConn();
-        toast(`Привязано: ${msg.deviceId}`);
-      } else {
-        toast(msg.error || "Ошибка привязки");
-      }
-      return;
     case "error":
       toast(msg.message || "Ошибка сервера");
       return;
     default:
       // response frames carry {action, ...} in msg.data
+      if (msg.data) { feedDeviceResponse(msg.data); return; }
       msg = msg.data || msg;
   }
+}
 
-  switch (msg.action) {
+// Device action response (from WS "response" frames or local /api/cmd)
+function feedDeviceResponse(d) {
+  if (!d) return;
+  switch (d.action) {
     case "statusResponse":
-      renderStatus(msg);
+      renderStatus(d);
       break;
     case "timeZoneData":
-      fillTimeZones(msg);
+      fillTimeZones(d);
       break;
     case "wifiStatusResponse":
-      renderWifi(msg.wifiStatus ? JSON.parse(msg.wifiStatus) : msg);
+      renderWifi(d.wifiStatus ? JSON.parse(d.wifiStatus) : d);
       break;
     case "powerOutputResponse":
     case "clearProtectionResponse":
-      if (msg.error) toast(msg.error);
-      else if (msg.action === "clearProtectionResponse") toast("Защита сброшена");
+      if (d.error) toast(d.error);
+      else if (d.action === "clearProtectionResponse") toast("Защита сброшена");
       break;
     case "setVoltageResponse":
     case "setCurrentResponse":
-      if (msg.error) toast(msg.error);
+      if (d.error) toast(d.error);
       break;
     case "setKeyLockResponse":
     case "keyLockResponse":
-      if (msg.locked != null) {
-        $("keyLock").textContent = msg.locked ? "🔒" : "🔓";
-        $("keyLock").className = "btn btn-sm " + (msg.locked ? "btn-warning" : "btn-ghost");
-        $("keyLock").title = msg.locked ? "Снять блокировку" : "Заблокировать";
+      if (d.locked != null) {
+        $("keyLock").textContent = d.locked ? "🔒" : "🔓";
+        $("keyLock").className = "btn btn-sm " + (d.locked ? "btn-warning" : "btn-ghost");
+        $("keyLock").title = d.locked ? "Снять блокировку" : "Заблокировать";
       }
       break;
     case "connectWifiResponse":
-      if (msg.success) { toast(`Подключено к ${msg.ssid}`); loadWifiStatus(); }
-      else toast(msg.error || "Не удалось подключиться");
+      if (d.success) { toast(`Подключено к ${d.ssid}`); loadWifiStatus(); }
+      else toast(d.error || "Не удалось подключиться");
       break;
     case "addWifiNetworkResponse":
-      toast(msg.success ? "Сеть сохранена" : "Ошибка сохранения сети");
+      toast(d.success ? "Сеть сохранена" : "Ошибка сохранения сети");
       break;
     case "memoryGroupData":
-      if (msg.success) {
-        cacheMemGroup(msg);
+      if (d.success) {
+        cacheMemGroup(d);
         if (batchMemPending > 0) {
           batchMemPending--;
           if (batchMemPending === 0) batchMemLoading = false;
         }
         if (!batchMemLoading) {
-          viewingGroup = Number(msg.group);
-          renderMemoryGroup(msg);
+          viewingGroup = Number(d.group);
+          renderMemoryGroup(d);
         }
       } else toast("Не удалось прочитать профиль");
       break;
     case "saveMemoryGroupResponse":
-      toast(msg.success ? `Профиль M${msg.group} сохранён` : "Ошибка сохранения профиля");
-      if (msg.success) {
-        const g = msg.group != null ? msg.group : viewingGroup;
+      toast(d.success ? `Профиль M${d.group} сохранён` : "Ошибка сохранения профиля");
+      if (d.success) {
+        const g = d.group != null ? d.group : viewingGroup;
         if (g != null) send({ action: "getMemoryGroup", group: g }); // refresh the selector label
       }
       break;
+    case "setMqttConfigResponse":
+      toast(d.success ? "Настройки сервера сохранены" : "Ошибка сохранения сервера");
+      break;
   }
   // Toast failures from device-setting responses
-  if (msg.action && msg.action.endsWith("Response") && msg.success === false && msg.error) {
-    toast(msg.error);
+  if (d.action && d.action.endsWith("Response") && d.success === false && d.error) {
+    toast(d.error);
   }
 }
 
@@ -777,6 +836,18 @@ function addNetwork() {
   $("wifiNewPass").value = "";
 }
 
+async function saveMqtt() {
+  const host = $("mqttNewHost").value.trim();
+  if (!host) { toast("Введите адрес сервера"); return; }
+  const port = parseInt($("mqttNewPort").value) || 1883;
+  if (mode === "local") {
+    send({ action: "setMqttConfig", host, port });
+  } else {
+    toast("Адрес сервера задаётся на самом блоке (локальный интерфейс)");
+    return;
+  }
+}
+
 // Map table-row [data-action] buttons to their inputs and build the command
 function applyRow(action, btn) {
   switch (action) {
@@ -841,16 +912,144 @@ function cancelConfig() {
   send({ action: "getData" });
 }
 
-// ---- Boot ----
-document.addEventListener("DOMContentLoaded", () => {
-  loadDevices();
+// ---- Auth (server mode) ----
+function showLogin(msg) {
+  $("loginOverlay").classList.remove("hidden");
+  if (msg) $("loginMsg").textContent = msg;
+}
+function hideLogin() {
+  $("loginOverlay").classList.add("hidden");
+}
+
+async function doAuth(register) {
+  const login = $("loginUser").value.trim();
+  const password = $("loginPass").value;
+  if (login.length < 3 || password.length < 4) {
+    $("loginMsg").textContent = "Логин ≥3, пароль ≥4";
+    return;
+  }
+  const r = await api(`/api/${register ? "register" : "login"}`, {
+    method: "POST",
+    body: JSON.stringify({ login, password }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { $("loginMsg").textContent = j.error || "Ошибка"; return; }
+  token = j.token;
+  try { localStorage.setItem("xypsu_token", token); } catch {}
+  $("loginMsg").textContent = "";
+  $("loginPass").value = "";
+  hideLogin();
+  await loadServerDevices();
+  connect();
+}
+
+async function loadServerDevices() {
+  const r = await api("/api/devices");
+  if (r.status === 401) { token = ""; try { localStorage.removeItem("xypsu_token"); } catch {} showLogin(); return; }
+  const j = await r.json().catch(() => ({ devices: [] }));
+  devices = j.devices || [];
+  onlineState = {};
+  devices.forEach((d) => { onlineState[d.deviceId] = d.online; });
+  if (!devices.some((d) => d.deviceId === boundDeviceId)) {
+    boundDeviceId = devices.length ? devices[0].deviceId : "";
+    if (boundDeviceId) try { localStorage.setItem(CURRENT_KEY, boundDeviceId); } catch {}
+  }
   renderDeviceSelect();
+  renderConn();
+}
+
+function doLogout() {
+  api("/api/logout", { method: "POST" }).catch(() => {});
+  token = "";
+  try { localStorage.removeItem("xypsu_token"); } catch {}
+  if (ws) { ws.onclose = null; try { ws.close(); } catch {} ws = null; }
+  devices = [];
+  boundDeviceId = "";
+  resetUi();
+  renderDeviceSelect();
+  setConn(true);
+  showLogin("");
+}
+
+// ---- Local mode: the device serves this UI and answers directly ----
+let localPollTimer = null;
+
+async function pollLocalStatus() {
+  try {
+    const r = await fetch("/api/status", { cache: "no-store" });
+    if (!r.ok) { throw new Error("bad"); }
+    const s = await r.json();
+    if (!boundDeviceId && s.deviceId) {
+      boundDeviceId = s.deviceId;
+      onlineState[s.deviceId] = true;
+      renderDeviceSelect();
+      connected = true;
+      setConn(false);
+      afterBind();
+    }
+    if (boundDeviceId) {
+      onlineState[boundDeviceId] = true;
+      renderStatus(s);
+      renderWifi({ ssid: s.ssid, ip: s.ip, rssi: s.rssi });
+    }
+    renderConn();
+  } catch {
+    if (boundDeviceId) onlineState[boundDeviceId] = false;
+    connected = false;
+    renderConn();
+  }
+}
+
+function startLocalMode() {
+  mode = "local";
+  $("deviceSelect").style.display = "none";
+  $("logoutBtn").classList.add("hidden");
+  $("mqttCard").classList.remove("hidden");
+  // Devices tab is server-only
+  document.querySelector('#tabbar button[data-page="devices"]').classList.add("hidden");
+  initTab();
+  pollLocalStatus();
+  localPollTimer = setInterval(pollLocalStatus, 1000);
+}
+
+// ---- Boot ----
+document.addEventListener("DOMContentLoaded", async () => {
   initTab();
 
+  // Detect transport: /api/status only exists on the device itself.
+  try {
+    const probe = await fetch("/api/status", { cache: "no-store" });
+    if (probe.ok) {
+      const st = await probe.json();
+      if (st && st.deviceId) {
+        startLocalMode();
+        wireEvents();
+        return;
+      }
+    }
+  } catch {}
+
+  // Server mode
+  mode = "server";
+  $("logoutBtn").classList.remove("hidden");
+  document.querySelector('#tabbar button[data-page="devices"]').classList.remove("hidden");
+  $("mqttCard").classList.add("hidden"); // broker address is set on the device itself
+  if (token) {
+    await loadServerDevices();
+    if (token) connect();
+    else wireEvents();
+  } else {
+    showLogin("");
+  }
+  wireEvents();
+});
+
+function wireEvents() {
   $("outBtn").addEventListener("click", toggleOutput);
   $("keyLock").addEventListener("click", toggleKeyLock);
   $("wifiAddBtn").addEventListener("click", addNetwork);
   $("wifiRefresh").addEventListener("click", loadWifiStatus);
+  $("mqttSaveBtn").addEventListener("click", saveMqtt);
   $("psuResetBtn").addEventListener("click", () => {
     if (confirm("Сбросить БП к заводским настройкам?")) send({ action: "psuReset" });
   });
@@ -872,14 +1071,20 @@ document.addEventListener("DOMContentLoaded", () => {
     btn.addEventListener("click", () => switchTab(btn.dataset.page));
   });
 
-  // Multi-instance controls: switch bound device / add a new one by bind key
+  // Multi-instance controls: switch bound device / add a new one by code
   $("deviceSelect").addEventListener("change", (e) => switchDevice(e.target.value));
   $("addOk").addEventListener("click", () => {
-    addDevice($("newKey").value);
-    $("newKey").value = "";
+    addDevice($("newCode").value);
+    $("newCode").value = "";
   });
   const addKeyEnter = (e) => { if (e.key === "Enter") $("addOk").click(); };
-  $("newKey").addEventListener("keydown", addKeyEnter);
+  $("newCode").addEventListener("keydown", addKeyEnter);
+
+  // Auth
+  $("loginBtn").addEventListener("click", () => doAuth(false));
+  $("registerBtn").addEventListener("click", () => doAuth(true));
+  $("loginPass").addEventListener("keydown", (e) => { if (e.key === "Enter") doAuth(false); });
+  $("logoutBtn").addEventListener("click", doLogout);
 
   // All [data-action] "ok" buttons
   document.querySelectorAll(".btn[data-action]").forEach((btn) => {
@@ -949,7 +1154,4 @@ document.addEventListener("DOMContentLoaded", () => {
   addStepHandler("pPlus", "pIn", 0.1, 1);
 
   $("pIn").addEventListener("keydown", (e) => { if (e.key === "Enter") setPower(); });
-
-  connect();
-  setInterval(loadWifiStatus, 30000);
-});
+}

@@ -4,7 +4,6 @@
 #include <WiFi.h>
 #include <Preferences.h>
 #include <ArduinoJson.h>
-#include <mbedtls/md5.h>
 
 static WiFiClient mqttWifiClient;
 static PubSubClient mqttClient(mqttWifiClient);
@@ -61,26 +60,6 @@ uint16_t mqttPort() {
   return port;
 }
 
-String mqttUser() {
-  Preferences prefs;
-  String user = "";
-  if (prefs.begin(MQTT_NAMESPACE, true)) {
-    user = prefs.getString(MQTT_USER_KEY, "");
-    prefs.end();
-  }
-  return user;
-}
-
-String mqttPass() {
-  Preferences prefs;
-  String pass = "";
-  if (prefs.begin(MQTT_NAMESPACE, true)) {
-    pass = prefs.getString(MQTT_PASS_KEY, "");
-    prefs.end();
-  }
-  return pass;
-}
-
 String mqttDeviceName() {
   Preferences prefs;
   String name = "";
@@ -92,38 +71,52 @@ String mqttDeviceName() {
   return name;
 }
 
-void mqttSaveConfig(const String& host, uint16_t port,
-                    const String& user, const String& pass,
-                    const String& deviceName) {
+void mqttSaveConfig(const String& host, uint16_t port) {
   Preferences prefs;
   prefs.begin(MQTT_NAMESPACE, false);
   prefs.putString(MQTT_HOST_KEY, host);
   prefs.putUShort(MQTT_PORT_KEY, port);
-  prefs.putString(MQTT_USER_KEY, user);
-  prefs.putString(MQTT_PASS_KEY, pass);
-  prefs.putString(MQTT_NAME_KEY, deviceName);
   prefs.end();
-  Serial.println("[MQTT] Config saved");
+  Serial.printf("[MQTT] Config saved: %s:%d\n", host.c_str(), port);
+}
+
+String mqttGetPairCode() {
+  Preferences prefs;
+  String code = "";
+  if (prefs.begin(MQTT_NAMESPACE, true)) {
+    code = prefs.getString(MQTT_PAIR_KEY, "");
+    prefs.end();
+  }
+  return code;
+}
+
+void mqttSetPairCode(const String& code) {
+  Preferences prefs;
+  prefs.begin(MQTT_NAMESPACE, false);
+  prefs.putString(MQTT_PAIR_KEY, code);
+  // A device with a code is unbound; an empty code means "bound".
+  prefs.putChar(MQTT_BOUND_KEY, code.length() ? 0 : 1);
+  prefs.end();
+  if (code.length()) Serial.printf("[MQTT] Pair code set: %s\n", code.c_str());
+  else Serial.println("[MQTT] Pair code cleared (bound)");
+}
+
+bool mqttGetBound() {
+  Preferences prefs;
+  int8_t bound = 0;
+  if (prefs.begin(MQTT_NAMESPACE, true)) {
+    bound = prefs.getChar(MQTT_BOUND_KEY, 0);
+    prefs.end();
+  }
+  return bound == 1;
 }
 
 static void publishInfo() {
   String infoTopic = String(INFO_TOPIC_TPL);
   infoTopic.replace("%s", mqttDeviceId());
-  String infoKey = String("");
-  uint8_t digest[16];
-  char hex[33];
-  // bind key = md5(deviceId)
-  String id = mqttDeviceId();
-  mbedtls_md5((const uint8_t*)id.c_str(), id.length(), digest);
-  for (int i = 0; i < 16; i++) {
-    sprintf(hex + i * 2, "%02x", digest[i]);
-  }
-  hex[32] = 0;
-  infoKey = String(hex);
 
   DynamicJsonDocument doc(256);
   doc["deviceId"] = mqttDeviceId();
-  doc["key"] = infoKey;
   doc["name"] = mqttDeviceName();
   doc["model"] = "XY-SK150S";
   String json;
@@ -192,11 +185,12 @@ static void mqttTask(void* param) {
       String clientId = String("xy-") + id;
       // Copy into a stable buffer: PubSubClient::setServer stores the pointer.
       strlcpy(mqttHostBuf, mqttHost().c_str(), sizeof(mqttHostBuf));
-      // Last-will: publish retained 0 to <device>/online if we drop off.
+      // Open broker: no user/password, only the clientId identifies the device.
       mqttClient.setServer(mqttHostBuf, mqttPort());
       mqttClient.setCallback(onMqttMessage);
       mqttClient.setBufferSize(2048);
-      bool connOk = mqttClient.connect(clientId.c_str(), mqttUser().c_str(), mqttPass().c_str(),
+      // Last-will: publish retained 0 to <device>/online if we drop off.
+      bool connOk = mqttClient.connect(clientId.c_str(),
                                        onlineTopic.c_str(), 1, true, "0");
       if (connOk) {
         Serial.printf("[MQTT] Connected to %s:%d\n", mqttHost().c_str(), mqttPort());
@@ -234,7 +228,7 @@ void mqttStart() {
   if (!mqttConfigLoaded()) {
     // First run: materialise the compile-time default into NVS so the namespace
     // exists and the reconnect loop doesn't spam nvs_open NOT_FOUND 4x/cycle.
-    mqttSaveConfig(MQTT_DEFAULT_HOST, MQTT_DEFAULT_PORT, "", "", "XY-SK150S");
+    mqttSaveConfig(MQTT_DEFAULT_HOST, MQTT_DEFAULT_PORT);
     Serial.printf("[MQTT] No config in NVS, using default host %s:%d\n",
                   MQTT_DEFAULT_HOST, MQTT_DEFAULT_PORT);
   }

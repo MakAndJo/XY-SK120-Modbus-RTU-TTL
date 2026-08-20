@@ -3,6 +3,7 @@
 #include "log_utils/log_utils.h"
 #include "config_manager.h"
 #include "wifi_interface/wifi_settings.h"
+#include "mqtt/mqtt_manager.h"
 
 // Declared in main.cpp
 extern XY_SKxxx* powerSupply;
@@ -380,6 +381,18 @@ String buildStatusJSON(const PSUStatusData& data) {
   return response;
 }
 
+// An 8-digit pair code is shown as a valid IPv4 on the PSU screen:
+// "12345678" -> 18.52.86.104 (each pair of digits becomes one octet).
+static uint32_t ipv4FromPairCode(const String& code) {
+  uint32_t ip = 0;
+  for (int i = 0; i < 8 && i + 1 < (int)code.length(); i += 2) {
+    char hi = code[i], lo = code[i + 1];
+    if (!isdigit(hi) || !isdigit(lo)) return 0;
+    ip = (ip << 8) | (uint8_t)((hi - '0') * 10 + (lo - '0'));
+  }
+  return ip;
+}
+
 void wifiModuleKeepAlive() {
   if (!powerSupply) return;
   IPAddress wifi = WiFi.localIP();
@@ -388,10 +401,37 @@ void wifiModuleKeepAlive() {
   bool connected = (WiFi.status() == WL_CONNECTED);
   if (!connected) ipv4 = 0;
 
+  // WiFi host status register (0x0032) mode table:
+  //   0  no network
+  //   1  LOCAL (WiFi up, MQTT down, PSU configured for touch pairing)
+  //   4  AP pairing (WiFi up, MQTT down)
+  //   5  SERVER online (WiFi + MQTT up)
+  uint16_t status = 0;
+  if (connected) {
+    if (mqttConnected()) {
+      status = 5;
+    } else {
+      uint16_t cfg = 0;
+      lockModbus();
+      powerSupply->readRegister(REG_WIFI_CONFIG, cfg);
+      unlockModbus();
+      status = (cfg == 1) ? 1 : 4;
+    }
+  }
+
+  // While the device is unbound, alternate the pair code (as IPv4) with the real
+  // IP every second so the PSU screen keeps showing a live address that also
+  // carries the code the user enters in the app.
+  uint32_t ipToWrite = ipv4;
+  String pair = mqttGetPairCode();
+  if (connected && pair.length() == 8 && (millis() / 1000) & 1) {
+    ipToWrite = ipv4FromPairCode(pair);
+  }
+
   uint16_t master = 0x3B3A;
-  uint16_t tail[3] = { connected ? 0x0005 : 0x0000,
-                       (uint16_t)((ipv4 >> 16) & 0xFFFF),
-                       (uint16_t)(ipv4 & 0xFFFF) };
+  uint16_t tail[3] = { status,
+                       (uint16_t)((ipToWrite >> 16) & 0xFFFF),
+                       (uint16_t)(ipToWrite & 0xFFFF) };
   lockModbus();
   bool w1 = powerSupply->writeRegister(REG_MASTER, master);
   bool w2 = powerSupply->writeRegisters(REG_WIFI_STATUS, 3, tail);
@@ -399,6 +439,36 @@ void wifiModuleKeepAlive() {
     LOG_ERROR("WiFi host keep-alive write failed");
   }
   unlockModbus();
+}
+
+String buildLocalStatusJSON() {
+  PSUStatusData data;
+  readPSUStatusBatched(data);
+  bool connected = (WiFi.status() == WL_CONNECTED);
+  DynamicJsonDocument doc(4096);
+  deserializeJson(doc, buildStatusJSON(data));
+  // The PSU register alternates between the real IP and the pair code (for the
+  // physical block's WiFi menu). The local UI must show the real IP only — the
+  // code is exposed explicitly via "pairCode" below, no blinking here.
+  uint32_t realIp = 0;
+  if (connected) {
+    IPAddress wifi = WiFi.localIP();
+    realIp = ((uint32_t)wifi[0] << 24) | ((uint32_t)wifi[1] << 16) |
+             ((uint32_t)wifi[2] << 8) | wifi[3];
+  }
+  doc["ipv4"] = realIp;
+  doc["deviceId"] = mqttDeviceId();
+  doc["bound"] = mqttGetBound();
+  doc["pairCode"] = mqttGetPairCode();
+  doc["mqttHost"] = mqttHost();
+  doc["mqttPort"] = mqttPort();
+  doc["mqttConnected"] = mqttConnected();
+  doc["ssid"] = connected ? WiFi.SSID() : "";
+  doc["ip"] = WiFi.localIP().toString();
+  doc["rssi"] = connected ? WiFi.RSSI() : -127;
+  String response;
+  serializeJson(doc, response);
+  return response;
 }
 
 // ---- Command dispatch (former WebSocket action handlers) ----
@@ -695,6 +765,35 @@ String handleMqttAction(const String& action, const char* payload) {
 
   if (action == "ping") {
     return "{\"action\":\"pong\"}";
+  }
+  if (action == "setPairCode") {
+    // Server-driven: a non-empty 8-digit code marks the device as unbound and
+    // shows it on the PSU screen; an empty code means "bound", hide the code.
+    String code = doc["code"] | "";
+    code.trim();
+    String digits = "";
+    for (size_t i = 0; i < code.length(); i++) {
+      if (isdigit(code[i])) digits += code[i];
+    }
+    if (digits.length() != 8) digits = "";
+    mqttSetPairCode(digits);
+    Serial.printf("[PSU] setPairCode: '%s'\n", digits.c_str());
+    return String("{\"action\":\"setPairCodeResponse\",\"success\":true,\"code\":\"") + digits + "\"}";
+  }
+  if (action == "setMqttConfig") {
+    String host = doc["host"] | "";
+    host.trim();
+    if (host.length() == 0) {
+      return "{\"action\":\"setMqttConfigResponse\",\"success\":false,\"error\":\"Empty host\"}";
+    }
+    uint16_t port = (uint16_t)(doc["port"] | 1883);
+    mqttSaveConfig(host, port);
+    return "{\"action\":\"setMqttConfigResponse\",\"success\":true}";
+  }
+  if (action == "restart") {
+    delay(200);
+    ESP.restart();
+    return "";
   }
   if (action == "getData" || action == "getStatus") {
     return getStatusResponse();
