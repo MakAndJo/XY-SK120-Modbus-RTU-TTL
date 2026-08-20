@@ -138,12 +138,12 @@
 // Legacy note: XY-SK120 docs mention RTC at 0x0100-0x0103 and weather at
 // 0x0110-0x011D, but the real XY-WFPOW module writes these into 0x0200-0x0214.
 
-/* Below are undocumented registers, available in the XY-SK120 manual and OSD (On-Screen Display) 
+/* Below are undocumented registers, available in the XY-SK120 manual and OSD (On-Screen Display)
 but not in the Modbus register map documentation
 */
 
 #define REG_S_ETP           0x005E    // WIP: Not implemented.
-// REG_S_ETP: both 0x005E and 0x005F stores the ETP (External Temperature Protection) value, but 0x005E is read-write and 0x005F is read-only and both values seems to be mirrored. 
+// REG_S_ETP: both 0x005E and 0x005F stores the ETP (External Temperature Protection) value, but 0x005E is read-write and 0x005F is read-only and both values seems to be mirrored.
 // However, writing to 0x005E does not seem to have any effect on the device, so it's likely not implemented or used.
 
 // beeper settings (beeper enable)
@@ -177,7 +177,7 @@ but not in the Modbus register map documentation
 // Host / WiFi module registers (Sinilink ESP8285H16 / XY-WFPOW). Writing
 // {0x3B3A, 2, 4, ip_hi, ip_lo} to 0x0030-0x0034 activates the WiFi host.
 #define REG_MASTER     0x0030  // Host type, 0x3B3A = WiFi host, Read and Write
-#define REG_WIFI_CONFIG 0x0031 // WiFi configuration status, 0=Invalid, 1=Pairing, 2=Valid, Read and Write
+#define REG_WIFI_CONFIG 0x0031 // WiFi configuration status, 0=None, 1=Touch, 2=AP, Read and Write
 #define REG_WIFI_STATUS 0x0032 // WiFi status, 0=Invalid, 1=Router, 2=Server, 3=Touch, 4=AP/Connected, 5=Online, Read and Write
 #define REG_IPV4_H      0x0033  // IP address high word (octet1<<8 | octet2), Read and Write
 #define REG_IPV4_L      0x0034  // IP address low word (octet3<<8 | octet4), Read and Write
@@ -204,24 +204,24 @@ struct DeviceStatus {
   float outputCurrent;     // Current output current (A)
   float outputPower;       // Current output power (W)
   float inputVoltage;      // Input voltage (V)
-  
+
   // Energy measurements
   // WIP: understand why a low and high registers for amp-hours and watt-hours is needed
   uint32_t ampHours;       // Accumulated amp-hours (mAh)
   uint32_t wattHours;      // Accumulated watt-hours (mWh)
   uint32_t outputTime;     // Output time in seconds
-  
+
   // Temperature readings
   float internalTemp;      // Internal temperature (°C/°F)
   float externalTemp;      // External temperature (°C/°F)
-  
+
   // Device state
   bool outputEnabled;      // Output state (on/off)
   bool keyLocked;          // Key lock status
   uint16_t protectionStatus; // Protection status
   uint16_t cvccMode;       // CC/CV mode (0: CV, 1: CC)
   uint16_t systemStatus;   // System status
-  
+
   // Device settings
   float setVoltage;        // Set voltage (V)
   float setCurrent;        // Set current (A)
@@ -238,29 +238,29 @@ struct ProtectionSettings {
   // Constant Voltage/Current settings
   float constantVoltage;    // CV setting (V)
   float constantCurrent;    // CC setting (A)
-  
+
   // Protection thresholds
   float lowVoltageProtection;   // Input low voltage protection (LVP) (V)
   float overVoltageProtection;   // Output over voltage protection (V)
   float overCurrentProtection;   // Output over current protection (A)
   float overPowerProtection;     // Output over power protection (W)
-  
+
   // Time-based protection
   uint16_t highPowerHours;       // Output high power protection hours
   uint16_t highPowerMinutes;     // Output high power protection minutes
-  
+
   // Energy-based protection
   uint16_t overAmpHoursLow;      // Over-amp-hour protection low
   uint16_t overAmpHoursHigh;     // Over-amp-hour protection high
   uint16_t overWattHoursLow;     // Over-watt-hour protection low
   uint16_t overWattHoursHigh;    // Over-watt-hour protection high
-  
+
   // Temperature protection
   float overTemperature;         // Over temperature protection (°C/°F)
-  
+
   // Initialization setting
   bool outputOnAtStartup;        // Power-on initialization setting
-  
+
   // Battery settings
   float batteryCutoffCurrent;    // Battery charge cutoff current (A)
 };
@@ -277,11 +277,11 @@ public:
   XY_SKxxx(uint8_t rxPin, uint8_t txPin, uint8_t slaveID);
   void begin(long baudRate);
   bool testConnection();
-  
+
   // Basic device information
   uint16_t getModel();
   uint16_t getVersion();
-  
+
   // Status cache methods
   bool updateAllStatus(bool force = false);
   bool updateOutputStatus(bool force = false);
@@ -289,7 +289,7 @@ public:
   bool updateEnergyMeters(bool force = false);
   bool updateTemperatures(bool force = false);
   bool updateDeviceState(bool force = false);
-  
+
   // Cached value access methods
   float getOutputVoltage(bool refresh = false);
   float getOutputCurrent(bool refresh = false);
@@ -307,19 +307,19 @@ public:
   bool isInConstantVoltageMode(bool refresh = false);
   float getSetVoltage(bool refresh = false);
   float getSetCurrent(bool refresh = false);
-  
+
   // Output settings
   bool setVoltage(float voltage);
   bool setCurrent(float current);
   bool getOutput(float &voltage, float &current, float &power);
-  
+
   // Combined measurement methods for convenience
-  bool getMeasurements(float &outVoltage, float &outCurrent, float &outPower, 
+  bool getMeasurements(float &outVoltage, float &outCurrent, float &outPower,
                       float &inVoltage, bool refresh = true);
-  bool getEnergyMeasurements(uint32_t &ampHours, uint32_t &wattHours, 
+  bool getEnergyMeasurements(uint32_t &ampHours, uint32_t &wattHours,
                            uint32_t &outputTime, bool refresh = true);
   bool getTemperatures(float &internalTemp, float &externalTemp, bool refresh = true);
-  
+
   // System control
   bool setKeyLock(bool lock);
   uint16_t getCVCCState(bool refresh = false);
@@ -339,13 +339,13 @@ public:
   bool getBeeper(bool &enabled);
   bool setTemperatureUnit(bool celsius);
   bool getTemperatureUnit(bool &celsius);
-  
+
   // MPPT (Maximum Power Point Tracking) settings
   bool setMPPTEnable(bool enabled);
   bool getMPPTEnable(bool &enabled);
   bool setMPPTThreshold(float threshold);
   bool getMPPTThreshold(float &threshold);
-  
+
   // Temperature calibration
   bool setInternalTempCalibration(float offset);
   bool setExternalTempCalibration(float offset);
@@ -356,30 +356,30 @@ public:
   uint16_t getSystemStatus(bool refresh = false);
   bool setProtectionStatus(uint16_t status);
   bool setSystemStatus(uint16_t status);
-  
+
   // Higher-level convenience methods with built-in timing
   bool setVoltageAndCurrent(float voltage, float current);
   bool turnOutputOn();
   bool turnOutputOff();
   bool getOutputStatus(float &voltage, float &current, float &power, bool &isOn);
-  
+
   // Improved Modbus RTU timing methods
   unsigned long silentInterval(unsigned long baudRate);
   void waitForSilentInterval();
   bool preTransmission();
   bool postTransmission();
-  
+
   // Protection settings methods
   bool setOverVoltageProtection(float voltage);
   bool setOverCurrentProtection(float current);
   bool setOverPowerProtection(float power);
   bool setLowVoltageProtection(float voltage);
-  
+
   bool getOverVoltageProtection(float &voltage);
   bool getOverCurrentProtection(float &current);
   bool getOverPowerProtection(float &power);
   bool getLowVoltageProtection(float &voltage);
-  
+
   // Amp-hour protection methods
   bool setOverAmpHourProtection(uint16_t ampHoursLow, uint16_t ampHoursHigh);
   bool getOverAmpHourProtection(uint16_t &ampHoursLow, uint16_t &ampHoursHigh);
@@ -405,16 +405,16 @@ public:
   bool getConstantVoltage(float &voltage);
   bool setConstantCurrent(float current);
   bool getConstantCurrent(float &current);
-  
+
   // Constant Power (CP) mode methods
   bool setConstantPowerMode(bool enabled);
   bool getConstantPowerMode(bool &enabled);
   bool isConstantPowerModeEnabled(bool refresh = false);
-  
+
   bool setConstantPower(float power);
   bool getConstantPower(float &power);
   float getCachedConstantPower(bool refresh = false);
-  
+
   // Protection cache methods
   bool updateAllProtectionSettings(bool force = false);
   bool updateConstantVoltageCurrentSettings(bool force = false);
@@ -423,7 +423,7 @@ public:
   bool updateEnergyProtection(bool force = false);
   bool updateTemperatureProtection(bool force = false);
   bool updateStartupSetting(bool force = false);
-  
+
   // Cached protection value access methods
   float getCachedConstantVoltage(bool refresh = false);
   float getCachedConstantCurrent(bool refresh = false);
@@ -456,67 +456,67 @@ public:
   bool readInputRegisters(uint16_t addr, uint16_t count, uint16_t* buffer);
 
   // Memory Group Methods
-  
+
   /**
    * Read all registers from a memory group
-   * 
+   *
    * @param group Memory group to read from
    * @param data Array to store the read data (must be able to hold DATA_GROUP_REGISTERS values)
    * @param force Force read from device even if cache is valid
    * @return true if successful
    */
   bool readMemoryGroup(xy_sk::MemoryGroup group, uint16_t* data, bool force = false);
-  
+
   /**
    * Write all registers to a memory group
-   * 
+   *
    * @param group Memory group to write to
    * @param data Array containing the data to write (must contain DATA_GROUP_REGISTERS values)
    * @return true if successful
    */
   bool writeMemoryGroup(xy_sk::MemoryGroup group, const uint16_t* data);
-  
+
   /**
    * Call a memory group to make it active (copy to M0)
-   * 
+   *
    * @param group Memory group to call (M1-M9, M0 is ignored)
    * @return true if successful
    */
   bool callMemoryGroup(xy_sk::MemoryGroup group);
-  
+
   /**
    * Read a specific register from a memory group
-   * 
+   *
    * @param group Memory group to read from
    * @param regOffset Specific register offset from GroupRegisterOffset enum
    * @param value Reference to store the read value
    * @return true if successful
    */
   bool readGroupRegister(xy_sk::MemoryGroup group, xy_sk::GroupRegisterOffset regOffset, uint16_t& value);
-  
+
   /**
    * Write to a specific register in a memory group
-   * 
+   *
    * @param group Memory group to write to
    * @param regOffset Specific register offset from GroupRegisterOffset enum
    * @param value Value to write
    * @return true if successful
    */
   bool writeGroupRegister(xy_sk::MemoryGroup group, xy_sk::GroupRegisterOffset regOffset, uint16_t value);
-  
+
   /**
    * Get memory group data from cache, optionally refreshing from device
-   * 
+   *
    * @param group Memory group to get
    * @param data Array to store the group data
    * @param refresh Whether to refresh the cache from device
    * @return true if successful
    */
   bool getCachedMemoryGroup(xy_sk::MemoryGroup group, uint16_t* data, bool refresh = false);
-  
+
   /**
    * Update the memory group cache from the device
-   * 
+   *
    * @param group Memory group to update
    * @param force Force update even if cache is still valid
    * @return true if successful
@@ -562,7 +562,7 @@ private:
   unsigned long _baudRate;
   unsigned long _lastCommsTime;
   unsigned long _silentIntervalTime;
-  
+
   // Cache management
   DeviceStatus _status;
   ProtectionSettings _protection;
@@ -579,13 +579,13 @@ private:
   unsigned long _lastEnergyProtectionUpdate;
   unsigned long _lastTempProtectionUpdate;
   unsigned long _lastStartupSettingUpdate;
-  
+
   // Static members for callbacks
   static XY_SKxxx* _instance;
   static void staticPreTransmission();
   static void staticPostTransmission();
 
-  // Additional cache fields 
+  // Additional cache fields
   float _internalTempCalibration;
   float _externalTempCalibration;
   bool _beeperEnabled;
@@ -593,10 +593,10 @@ private:
   bool _mpptEnabled;         // Add MPPT enable state cache
   float _mpptThreshold;      // Add MPPT threshold cache
   unsigned long _lastCalibrationUpdate;
-  
+
   // Additional cache timestamps
   unsigned long _lastBatteryCutoffUpdate;
-  
+
   // Communication settings cache
   uint8_t _cachedSlaveAddress;
   uint8_t _cachedBaudRateCode;

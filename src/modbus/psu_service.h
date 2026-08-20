@@ -86,6 +86,10 @@ void getPSUOperatingModeDetails(XY_SKxxx* powerSupply, String& modeName, float& 
 // WiFi status (0=offline, 5=connected) + our local IP every ~1s.
 void wifiModuleKeepAlive();
 
+// Last REG_WIFI_CONFIG value read by wifiModuleKeepAlive (0=None, 1=Touch,
+// 2=AP — set from the block itself). The mode watcher reacts to changes.
+int getWifiConfigState();
+
 // Dispatch a single command {action, ...} and return the response JSON string.
 // Used by the MQTT subscriber. Returns "" for unknown actions.
 String handleMqttAction(const String& action, const char* payload);

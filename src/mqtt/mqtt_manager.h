@@ -39,6 +39,12 @@ void mqttSetPairCode(const String& code);
 // The server clears the code on bind and issues a fresh one on unbind.
 bool mqttGetBound();
 
+// Touch pairing requested from the block: generate a fresh pair code on the
+// device immediately (it starts showing in the PSU IP field right away) and
+// tell the server to drop the old binding and record the new code.
+void mqttRequestRepair();
+void mqttCancelRepair();
+
 // Start/stop the MQTT client background task. start() spawns a task that
 // connects, publishes retained info/status, subscribes to <device>/command and
 // publishes responses. stop() disconnects and halts the task.

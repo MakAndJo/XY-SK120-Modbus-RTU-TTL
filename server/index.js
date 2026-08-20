@@ -226,17 +226,21 @@ broker.on('clientDisconnect', (client) => {
 });
 
 // When a device subscribes to its command topic it is ready to receive the
-// pairing code (or the "bound, clear code" message).
+// pairing code (or the "bound, clear code" message). Always sync the device's
+// stored code to the server state: a bound device gets an empty code so any
+// stale code left in NVS (e.g. after a reboot) is cleared.
 broker.on('subscribe', (subscriptions, client) => {
   const id = String(client.id || '');
   if (!id.startsWith('xy-')) return;
   const deviceId = id.slice(3);
   for (const sub of subscriptions) {
     if (sub.topic === `xysk/${deviceId}/command`) {
-      const code = ensurePairCode(deviceId);
-      if (code) {
-        console.log(`[pair] ${deviceId} ready, pushing code ${code}`);
-        pushPairCode(deviceId, code);
+      const dev = db.prepare('SELECT bound_to FROM devices WHERE device_id = ?').get(deviceId);
+      if (dev && dev.bound_to) {
+        pushPairCode(deviceId, '');
+      } else {
+        const code = ensurePairCode(deviceId);
+        if (code) pushPairCode(deviceId, code);
       }
       break;
     }
@@ -298,6 +302,24 @@ broker.on('publish', async (packet) => {
     } catch (e) {
       console.error('[broker] bad info message:', e.message);
     }
+  }
+
+  // Touch pairing requested from the block: drop the old binding and record the
+// fresh code (the device generates it and ships it in the payload). Fall back
+// to generating one here if the payload is missing/invalid.
+  if (kind === 'repair') {
+    ensureDeviceRow(deviceId);
+    let code = '';
+    try {
+      const r = JSON.parse(payload);
+      code = normalizeCode(r.code);
+    } catch {}
+    if (code.length !== 8) code = generatePairCode();
+    db.prepare('UPDATE devices SET bound_to = NULL, pair_code = ? WHERE device_id = ?')
+      .run(code, deviceId);
+    console.log(`[repair] ${deviceId} re-pairing, new code ${code}`);
+    pushPairCode(deviceId, code);
+    return;
   }
 
   // cache latest value (skip commands, they run server → device only)

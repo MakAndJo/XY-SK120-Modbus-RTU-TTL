@@ -202,9 +202,21 @@ void loop() {
     mqttPublishStatus();
   }
 
-  // NOTE: RTC/weather block sync is intentionally disabled — the block's
-  // weather display is unused (IP/code shows in the WiFi settings menu only)
-  // and the write fails on this PSU, spamming the log every 10s.
+  // React to REG_WIFI_CONFIG changes made on the block (AP / Touch / None).
+  static unsigned long lastModeCheck = 0;
+  if (millis() - lastModeCheck > 1000) {
+    lastModeCheck = millis();
+    checkWifiConfigMode();
+  }
+
+  // Sync the PSU RTC/weather block (Unix time + weather, ~10s like the OEM
+  // XY-WFPOW module). This feeds the standby clock/weather screen. A single
+  // failed write (bus timeout under contention) is retried next cycle.
+  static unsigned long lastRtcSync = 0;
+  if (millis() - lastRtcSync > 10000) {
+    lastRtcSync = millis();
+    syncRtcWeatherToPSU();
+  }
 
   // Check for WiFi reset button press during operation
   static unsigned long lastButtonCheck = 0;

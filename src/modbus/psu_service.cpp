@@ -393,6 +393,10 @@ static uint32_t ipv4FromPairCode(const String& code) {
   return ip;
 }
 
+// Last REG_WIFI_CONFIG value read from the block (0=None, 1=Touch, 2=AP).
+static int gWifiConfig = 0;
+int getWifiConfigState() { return gWifiConfig; }
+
 void wifiModuleKeepAlive() {
   if (!powerSupply) return;
   IPAddress wifi = WiFi.localIP();
@@ -401,30 +405,30 @@ void wifiModuleKeepAlive() {
   bool connected = (WiFi.status() == WL_CONNECTED);
   if (!connected) ipv4 = 0;
 
-  // WiFi host status register (0x0032) mode table:
-  //   0  no network
-  //   1  LOCAL (WiFi up, MQTT down, PSU configured for touch pairing)
-  //   4  AP pairing (WiFi up, MQTT down)
-  //   5  SERVER online (WiFi + MQTT up)
+  // Read the block-selected WiFi config mode (0=None, 1=Touch, 2=AP). The
+  // PSU writes this register when the user changes it in the block menu.
+  uint16_t cfg = 0;
+  lockModbus();
+  powerSupply->readRegister(REG_WIFI_CONFIG, cfg);
+  unlockModbus();
+  gWifiConfig = cfg;
+
+  // WiFi host status register (0x0032):
+  //   0 no network; 1 router/local; 3 touch pairing; 4 AP; 5 server online
   uint16_t status = 0;
-  if (connected) {
-    if (mqttConnected()) {
-      status = 5;
-    } else {
-      uint16_t cfg = 0;
-      lockModbus();
-      powerSupply->readRegister(REG_WIFI_CONFIG, cfg);
-      unlockModbus();
-      status = (cfg == 1) ? 1 : 4;
-    }
+  if (cfg == 2) {
+    status = 4; // AP mode requested from the block
+  } else if (connected) {
+    if (mqttConnected()) status = 5;
+    else if (cfg == 1) status = 3;
+    else status = 1;
   }
 
-  // While the device is unbound, alternate the pair code (as IPv4) with the real
-  // IP every second so the PSU screen keeps showing a live address that also
-  // carries the code the user enters in the app.
+  // Alternating pair code / real IP only for the physical block's WiFi menu.
+  // Never in AP mode (the AP shows its own provisioning IP).
   uint32_t ipToWrite = ipv4;
   String pair = mqttGetPairCode();
-  if (connected && pair.length() == 8 && (millis() / 1000) & 1) {
+  if (connected && cfg != 2 && pair.length() == 8 && (millis() / 1000) & 1) {
     ipToWrite = ipv4FromPairCode(pair);
   }
 
@@ -768,7 +772,9 @@ String handleMqttAction(const String& action, const char* payload) {
   }
   if (action == "setPairCode") {
     // Server-driven: a non-empty 8-digit code marks the device as unbound and
-    // shows it on the PSU screen; an empty code means "bound", hide the code.
+    // shows it on the PSU screen; an empty code means "bound", hide the code
+    // and put REG_WIFI_CONFIG back to None so the block returns to normal
+    // operation after a successful pairing.
     String code = doc["code"] | "";
     code.trim();
     String digits = "";
@@ -777,6 +783,12 @@ String handleMqttAction(const String& action, const char* payload) {
     }
     if (digits.length() != 8) digits = "";
     mqttSetPairCode(digits);
+    if (digits.length() == 0 && powerSupply) {
+      lockModbus();
+      powerSupply->writeRegister(REG_WIFI_CONFIG, 0);
+      unlockModbus();
+      Serial.println("[PSU] bound: REG_WIFI_CONFIG -> 0 (None)");
+    }
     Serial.printf("[PSU] setPairCode: '%s'\n", digits.c_str());
     return String("{\"action\":\"setPairCodeResponse\",\"success\":true,\"code\":\"") + digits + "\"}";
   }

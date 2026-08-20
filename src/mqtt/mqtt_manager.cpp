@@ -111,6 +111,39 @@ bool mqttGetBound() {
   return bound == 1;
 }
 
+// Touch pairing: a pending repair request that goes out once the device is
+// connected to the broker. Set by mqttRequestRepair(), cleared after publish.
+static volatile bool repairPending = false;
+
+static void publishRepair() {
+  if (!mqttClient.connected()) return;
+  DynamicJsonDocument doc(64);
+  doc["code"] = mqttGetPairCode();
+  String json;
+  serializeJson(doc, json);
+  String topic = String("xysk/") + mqttDeviceId() + "/repair";
+  if (mqttClient.publish(topic.c_str(), json.c_str(), false)) {
+    Serial.printf("[MQTT] repair published: %s\n", json.c_str());
+    repairPending = false;
+  }
+}
+
+void mqttRequestRepair() {
+  // Generate a fresh code locally (digits 1-9, IPv4-friendly) so it shows on
+  // the PSU screen immediately, then sync it to the server over MQTT.
+  const char* digits = "123456789";
+  String code = "";
+  for (int i = 0; i < 8; i++) code += digits[esp_random() % 9];
+  mqttSetPairCode(code);
+  Serial.printf("[MQTT] repair: new code %s\n", code.c_str());
+  repairPending = true;
+  publishRepair(); // no-op when disconnected; mqttTask retries
+}
+
+void mqttCancelRepair() {
+  repairPending = false;
+}
+
 static void publishInfo() {
   String infoTopic = String(INFO_TOPIC_TPL);
   infoTopic.replace("%s", mqttDeviceId());
@@ -205,6 +238,9 @@ static void mqttTask(void* param) {
         commandTopic.replace("%s", id);
         mqttClient.subscribe(commandTopic.c_str());
         Serial.printf("[MQTT] Subscribed to %s\n", commandTopic.c_str());
+
+        // A touch-pairing request pending from the block goes out now.
+        if (repairPending) publishRepair();
       } else {
         Serial.printf("[MQTT] Connect failed rc=%d\n", mqttClient.state());
         vTaskDelay(3000 / portTICK_PERIOD_MS);

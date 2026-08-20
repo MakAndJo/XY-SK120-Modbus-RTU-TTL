@@ -14,6 +14,8 @@ static const byte DNS_PORT = 53;
 static volatile bool portalRunning = false;  // AP provisioning mode
 static volatile bool staRunning = false;     // STA local server mode
 static volatile bool serveModeAp = false;
+static bool portalTimeout = true;            // boot-time 10min safety timeout
+static volatile bool webTaskActive = false;  // web task currently running
 
 // ---- Embedded client (gzipped PROGMEM) -------------------------------------
 
@@ -196,6 +198,7 @@ static void registerRoutes() {
 
 static void webTask(void* param) {
   (void)param;
+  webTaskActive = true;
   registerRoutes();
   webServer.begin();
 
@@ -203,8 +206,9 @@ static void webTask(void* param) {
   while (portalRunning || staRunning) {
     if (serveModeAp) dnsServer.processNextRequest();
     webServer.handleClient();
-    // 10 minute safety timeout so the device never sits in AP forever.
-    if (serveModeAp && millis() - startMs > 10UL * 60UL * 1000UL) {
+    // Boot-time safety timeout so the device never sits in AP forever.
+    // cfg-driven AP (user asked for it) has no timeout.
+    if (serveModeAp && portalTimeout && millis() - startMs > 10UL * 60UL * 1000UL) {
       Serial.println("[WEB] Provisioning timeout, shutting down");
       break;
     }
@@ -219,11 +223,26 @@ static void webTask(void* param) {
   portalRunning = false;
   staRunning = false;
   Serial.println("[WEB] Server stopped");
+  webTaskActive = false;
   vTaskDelete(NULL);
 }
 
 void startCaptivePortal() {
   if (portalRunning || staRunning) return;
+  portalTimeout = true;
+  startApPortal();
+}
+
+void startApPortal() {
+  if (portalRunning || staRunning) return;
+  // Make sure a previous web task (STA local server) fully exited before we
+  // touch the shared WebServer instance again.
+  unsigned long waitMs = millis();
+  while (webTaskActive && millis() - waitMs < 2000) vTaskDelay(20 / portTICK_PERIOD_MS);
+  if (webTaskActive) {
+    Serial.println("[WEB] Old server task did not exit, aborting AP start");
+    return;
+  }
   serveModeAp = true;
   portalRunning = true;
 
@@ -247,6 +266,44 @@ void stopCaptivePortal() {
 
 bool captivePortalActive() {
   return portalRunning;
+}
+
+// ---- REG_WIFI_CONFIG mode watcher -------------------------------------------
+
+// React to the block selecting a WiFi config mode (0=None, 1=Touch, 2=AP).
+// Called from loop(); transitions only fire when the register actually changes.
+static int lastModeCfg = -1;
+
+void checkWifiConfigMode() {
+  int cfg = getWifiConfigState();
+  if (cfg == lastModeCfg) return;
+  lastModeCfg = cfg;
+  Serial.printf("[WEB] REG_WIFI_CONFIG -> %d\n", cfg);
+
+  if (cfg == 2) {
+    // AP mode requested from the block: become an access point.
+    stopLocalServer();
+    mqttCancelRepair();
+    startApPortal();
+  } else if (cfg == 1) {
+    // Touch pairing: leave AP if active, then break the old server binding and
+    // request a fresh pair code (shown on the PSU screen immediately).
+    if (captivePortalActive()) {
+      stopCaptivePortal();
+      WiFi.mode(WIFI_STA);
+      connectToSavedNetworks();
+    }
+    mqttRequestRepair();
+  } else {
+    // None: normal operation — back to station + server mode.
+    if (captivePortalActive()) {
+      stopCaptivePortal();
+      WiFi.mode(WIFI_STA);
+      connectToSavedNetworks();
+    }
+    mqttCancelRepair();
+    mqttStart();
+  }
 }
 
 void startLocalServer() {

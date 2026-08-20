@@ -116,10 +116,15 @@ void syncRtcWeatherToPSU() {
 
   lockModbus();
   bool ok = powerSupply->writeRegisters(REG_RTC_TIME_LO, 21, regs);
-  if (!ok) {
-    LOG_ERROR("RTC/weather block write failed");
-  }
   unlockModbus();
+  if (!ok) {
+    // Bus timeouts under contention happen; log at most once every 5 min.
+    static unsigned long lastErrMs = 0;
+    if (millis() - lastErrMs > 5UL * 60UL * 1000UL) {
+      lastErrMs = millis();
+      LOG_ERROR("RTC/weather block write failed");
+    }
+  }
 }
 
 // Background task: refresh the weather cache from Open-Meteo roughly every

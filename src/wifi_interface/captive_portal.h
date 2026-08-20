@@ -18,11 +18,20 @@
 // once the user saves working credentials (or after a safety timeout).
 void startCaptivePortal();
 
+// AP mode requested from the block (REG_WIFI_CONFIG=2): like the portal but
+// without the boot-time safety timeout, since the user drives the mode.
+void startApPortal();
+
 // Stop the portal, shut down the AP and return to station mode.
 void stopCaptivePortal();
 
 // True while the portal is running (AP up + HTTP serving).
 bool captivePortalActive();
+
+// React to REG_WIFI_CONFIG changes made on the block:
+//   2 -> switch to AP mode; 1 -> touch pairing (fresh code + server re-pair);
+//   0 -> normal mode. Call periodically from loop().
+void checkWifiConfigMode();
 
 // Start the local server in STA mode (serves the client + API on the LAN IP).
 void startLocalServer();
