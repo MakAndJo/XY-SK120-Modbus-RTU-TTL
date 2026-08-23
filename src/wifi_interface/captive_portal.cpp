@@ -136,6 +136,35 @@ static void handleApiMqtt() {
   webServer.send(200, "application/json", "{\"success\":true}");
 }
 
+static void handleApiPair() {
+  if (webServer.method() == HTTP_GET) {
+    DynamicJsonDocument out(128);
+    out["pairing"] = mqttPairingActive();
+    out["bound"] = mqttGetBound();
+    out["pairCode"] = mqttGetPairCode();
+    String json;
+    serializeJson(out, json);
+    webServer.send(200, "application/json", json);
+    return;
+  }
+  DynamicJsonDocument doc(128);
+  deserializeJson(doc, webServer.arg("plain"));
+  bool active = doc["active"] | true;
+  if (active) {
+    mqttRequestRepair();
+    mqttStart();
+  } else {
+    mqttCancelRepair();
+    mqttStop();
+  }
+  DynamicJsonDocument r(64);
+  r["success"] = true;
+  r["pairing"] = mqttPairingActive();
+  String json;
+  serializeJson(r, json);
+  webServer.send(200, "application/json", json);
+}
+
 // ---- Provisioning (AP mode only) -------------------------------------------
 
 static void handleSave() {
@@ -192,6 +221,7 @@ static void registerRoutes() {
   webServer.on("/api/cmd", handleApiCmd);
   webServer.on("/api/wifi", handleApiWifi);
   webServer.on("/api/mqtt", handleApiMqtt);
+  webServer.on("/api/pair", handleApiPair);
   webServer.on("/save", handleSave);
   webServer.onNotFound(handleNotFound);
 }
@@ -281,9 +311,10 @@ void checkWifiConfigMode() {
   Serial.printf("[WEB] REG_WIFI_CONFIG -> %d\n", cfg);
 
   if (cfg == 2) {
-    // AP mode requested from the block: become an access point.
+    // AP mode picked from the block: local AP panel only, MQTT never runs.
     stopLocalServer();
     mqttCancelRepair();
+    mqttStop();
     startApPortal();
   } else if (cfg == 1) {
     // Touch pairing: leave AP if active, then break the old server binding and
@@ -294,6 +325,7 @@ void checkWifiConfigMode() {
       connectToSavedNetworks();
     }
     mqttRequestRepair();
+    mqttStart();
   } else {
     // None: normal operation — back to station + server mode.
     if (captivePortalActive()) {
@@ -301,8 +333,10 @@ void checkWifiConfigMode() {
       WiFi.mode(WIFI_STA);
       connectToSavedNetworks();
     }
+    // Leaving pairing without binding → drop the code and back off the broker.
+    // If bound (or still pairing) the loop() keeps/restarts the connection.
     mqttCancelRepair();
-    mqttStart();
+    if (!mqttShouldConnect()) mqttStop();
   }
 }
 

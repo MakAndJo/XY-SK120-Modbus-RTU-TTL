@@ -771,10 +771,10 @@ String handleMqttAction(const String& action, const char* payload) {
     return "{\"action\":\"pong\"}";
   }
   if (action == "setPairCode") {
-    // Server-driven: a non-empty 8-digit code marks the device as unbound and
-    // shows it on the PSU screen; an empty code means "bound", hide the code
-    // and put REG_WIFI_CONFIG back to None so the block returns to normal
-    // operation after a successful pairing.
+    // Server-driven. A non-empty 8-digit code means the device is (still)
+    // unbound / re-pairing: show it and keep the broker link up. An empty code
+    // means bound: hide the code, commit the binding and put REG_WIFI_CONFIG
+    // back to None so the block returns to normal operation.
     String code = doc["code"] | "";
     code.trim();
     String digits = "";
@@ -783,11 +783,16 @@ String handleMqttAction(const String& action, const char* payload) {
     }
     if (digits.length() != 8) digits = "";
     mqttSetPairCode(digits);
-    if (digits.length() == 0 && powerSupply) {
-      lockModbus();
-      powerSupply->writeRegister(REG_WIFI_CONFIG, 0);
-      unlockModbus();
+    if (digits.length() == 0) {
+      mqttCancelRepair();
+      if (powerSupply) {
+        lockModbus();
+        powerSupply->writeRegister(REG_WIFI_CONFIG, 0);
+        unlockModbus();
+      }
       Serial.println("[PSU] bound: REG_WIFI_CONFIG -> 0 (None)");
+    } else {
+      mqttSetPairing(true);
     }
     Serial.printf("[PSU] setPairCode: '%s'\n", digits.c_str());
     return String("{\"action\":\"setPairCodeResponse\",\"success\":true,\"code\":\"") + digits + "\"}";

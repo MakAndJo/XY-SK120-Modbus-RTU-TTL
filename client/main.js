@@ -484,6 +484,12 @@ function renderStatus(s) {
       else if (s.pairCode) pc.textContent = s.pairCode;
       else pc.textContent = "--";
     }
+    const pb = $("pairBtn");
+    if (pb) {
+      if (s.bound) { pb.textContent = "Подключено"; pb.disabled = true; }
+      else if (s.pairCode) { pb.textContent = "Отключить сопряжение"; pb.disabled = false; }
+      else { pb.textContent = "Сопряжение с сервером"; pb.disabled = false; }
+    }
   }
 
   // Pair code card (local mode: show the code until the block is bound)
@@ -1050,6 +1056,16 @@ function wireEvents() {
   $("wifiAddBtn").addEventListener("click", addNetwork);
   $("wifiRefresh").addEventListener("click", loadWifiStatus);
   $("mqttSaveBtn").addEventListener("click", saveMqtt);
+  $("pairBtn").addEventListener("click", async () => {
+    const cur = await fetch("/api/pair").then((r) => r.json()).catch(() => ({}));
+    const active = !(cur.pairing || cur.bound);
+    const r = await fetch("/api/pair", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ active }),
+    }).then((x) => x.json()).catch(() => ({}));
+    toast(r.pairing ? "Сопряжение включено" : "Сопряжение выключено");
+  });
   $("psuResetBtn").addEventListener("click", () => {
     if (confirm("Сбросить БП к заводским настройкам?")) send({ action: "psuReset" });
   });

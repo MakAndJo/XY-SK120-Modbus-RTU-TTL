@@ -103,6 +103,11 @@ void setup() {
   // Initialize the Modbus bus mutex before any task can touch the bus
   initPsuService();
 
+  // Boot reconcile: an unbound device must not keep a stale pair code (left
+  // over from an interrupted pairing session) or a broker link. Binding is
+  // confirmed only by the server pushing an empty setPairCode.
+  if (!mqttGetBound() && mqttGetPairCode().length() > 0) mqttClearCode();
+
   // Initialize Modbus RTU (attaches the global ModbusMaster to Serial1; the
   // real baud/pins are applied by powerSupply->begin() below)
   setupModbus();
@@ -182,14 +187,13 @@ void loop() {
   // OTA service
   ArduinoOTA.handle();
 
-  // Start MQTT as soon as WiFi is up. mqttStart() is idempotent, so this also
-  // re-forwards the client after WiFi reconnects (the MQTT task itself keeps
-  // reconnecting while connected() == false).
+  // Start MQTT as soon as WiFi is up, but only when the device is bound or the
+// user is actively pairing. Unbound + idle stays on the local server only.
+// Running the WiFi radio is independent of the broker link.
   if (WiFi.status() == WL_CONNECTED) {
-    mqttStart();
-    // Serve the embedded client + /api/* on the LAN IP so the block can be
-    // controlled directly (local mode) even while the broker is unreachable.
     startLocalServer();
+    if (mqttShouldConnect()) mqttStart();
+    else mqttStop();
   } else {
     stopLocalServer();
   }

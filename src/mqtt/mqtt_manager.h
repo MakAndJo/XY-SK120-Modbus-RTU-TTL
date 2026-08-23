@@ -45,9 +45,16 @@ bool mqttGetBound();
 void mqttRequestRepair();
 void mqttCancelRepair();
 
-// Start/stop the MQTT client background task. start() spawns a task that
-// connects, publishes retained info/status, subscribes to <device>/command and
-// publishes responses. stop() disconnects and halts the task.
+// Wipe any stored pair code and mark the device as not bound (used at boot to
+// drop a stale code left over from an interrupted pairing session).
+void mqttClearCode();
+
+// Connection gate: only talk to the broker when bound, or when the user is
+// actively pairing (Touch on the block / button in the local panel). AP mode
+// (REG_WIFI_CONFIG=2) never enables MQTT.
+bool mqttShouldConnect();
+bool mqttPairingActive();
+void mqttSetPairing(bool active);
 void mqttStart();
 void mqttStop();
 

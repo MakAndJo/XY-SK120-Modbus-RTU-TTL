@@ -114,6 +114,24 @@ bool mqttGetBound() {
 // Touch pairing: a pending repair request that goes out once the device is
 // connected to the broker. Set by mqttRequestRepair(), cleared after publish.
 static volatile bool repairPending = false;
+// True while the user (or the server) has an active pairing intent. When false
+// and the device is not bound, no broker connection is made at all.
+static volatile bool pairingActive = false;
+
+bool mqttPairingActive() { return pairingActive; }
+
+// Connection gate: only talk to the broker when bound, or when the user is
+// actively pairing. AP mode (REG_WIFI_CONFIG=2) never enables MQTT.
+bool mqttShouldConnect() {
+  if (getWifiConfigState() == 2) return false; // AP: local AP panel only
+  return mqttGetBound() || pairingActive;
+}
+
+// Mark active pairing without regenerating the code (used when the server
+// pushes a re-pair code for a bound device).
+void mqttSetPairing(bool active) {
+  pairingActive = active;
+}
 
 static void publishRepair() {
   if (!mqttClient.connected()) return;
@@ -135,13 +153,33 @@ void mqttRequestRepair() {
   String code = "";
   for (int i = 0; i < 8; i++) code += digits[esp_random() % 9];
   mqttSetPairCode(code);
-  Serial.printf("[MQTT] repair: new code %s\n", code.c_str());
+  pairingActive = true;
   repairPending = true;
+  Serial.printf("[MQTT] pairing active, new code %s\n", code.c_str());
   publishRepair(); // no-op when disconnected; mqttTask retries
 }
 
-void mqttCancelRepair() {
+void mqttClearCode() {
+  pairingActive = false;
   repairPending = false;
+  Preferences prefs;
+  if (prefs.begin(MQTT_NAMESPACE, false)) {
+    prefs.putString(MQTT_PAIR_KEY, "");
+    prefs.putChar(MQTT_BOUND_KEY, 0);
+    prefs.end();
+  }
+  Serial.println("[MQTT] code cleared");
+}
+
+void mqttCancelRepair() {
+  if (!mqttGetBound()) {
+    // Abandoned pairing while never bound: wipe the stale code and intent so
+    // the screen stops blinking a code no one can use.
+    mqttClearCode();
+  } else {
+    pairingActive = false;
+    repairPending = false;
+  }
 }
 
 static void publishInfo() {
@@ -261,6 +299,10 @@ static void mqttTask(void* param) {
 
 void mqttStart() {
   if (mqttTaskRunning) return;
+  if (!mqttShouldConnect()) {
+    Serial.println("[MQTT] connect declined (not bound, not pairing)");
+    return;
+  }
   if (!mqttConfigLoaded()) {
     // First run: materialise the compile-time default into NVS so the namespace
     // exists and the reconnect loop doesn't spam nvs_open NOT_FOUND 4x/cycle.
