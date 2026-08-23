@@ -169,8 +169,8 @@ static bool readPSUStatusBatchedLocked(PSUStatusData& data) {
     data.current = buf[3] / 1000.0f;
     data.power = buf[4] / 100.0f;
     data.inputVoltage = buf[5] / 100.0f;
-    data.ampHours = ((uint32_t)buf[6] | ((uint32_t)buf[7] << 16)) * 0.01f;
-    data.wattHours = ((uint32_t)buf[8] | ((uint32_t)buf[9] << 16)) * 0.01f;
+    data.ampHours = ((uint32_t)buf[6] | ((uint32_t)buf[7] << 16)) * 0.001f;
+    data.wattHours = ((uint32_t)buf[8] | ((uint32_t)buf[9] << 16)) * 0.001f;
     data.outputTime = buf[10] * 3600u + buf[11] * 60u + buf[12];
     data.internalTemp = buf[13] / 10.0f;
     data.externalTemp = buf[14] / 10.0f;
