@@ -12,18 +12,25 @@ function formatHostType(v) {
   return "0x" + v.toString(16).toUpperCase();
 }
 function formatWifiConfig(v) {
-  if (v == null || v === 0) return "0 — недействительно";
-  if (v === 1) return "1 — Touch pairing";
-  if (v === 2) return "2 — AP pairing";
+  if (v == null) return "--";
+  if (v === 0) return "0 — None";
+  if (v === 1) return "1 — Touch";
+  if (v === 2) return "2 — AP";
+  if (v === 3) return "3 — PAIR";
+  if (v === 4) return "4 — -NULL-";
+  if (v === 5) return "5 — -TOUCH-";
+  if (v === 6) return "6 — -AP-CH-";
+  if (v === 7) return "7 — -ROUT--";
+  if (v === 8) return "8 — -SERVER-";
   return String(v);
 }
 function formatWifiStatus(v) {
-  if (v == null || v === 0) return "0 — сеть недействительна";
-  if (v === 1) return "1 — локально (роутер)";
-  if (v === 2) return "2 — подключено к серверу";
-  if (v === 3) return "3 — Touch pairing";
-  if (v === 4) return "4 — AP pairing";
-  if (v === 5) return "5 — онлайн (сервер)";
+  if (v == null) return "--";
+  if (v === 0) return "0 — NULL (нет сети)";
+  if (v === 1) return "1 — TOUCH (сопряжение)";
+  if (v === 2) return "2 — AP";
+  if (v === 3) return "3 — ROUT (локально)";
+  if (v === 4) return "4 — SERVER (онлайн)";
   return String(v);
 }
 function formatIpv4(v) {
@@ -490,6 +497,8 @@ function renderStatus(s) {
       else if (s.pairCode) { pb.textContent = "Отключить сопряжение"; pb.disabled = false; }
       else { pb.textContent = "Сопряжение с сервером"; pb.disabled = false; }
     }
+    const em = $("exitModeBtn");
+    if (em) em.classList.toggle("hidden", !(s.mode === 2));
   }
 
   // Pair code card (local mode: show the code until the block is bound)
@@ -1065,6 +1074,14 @@ function wireEvents() {
       body: JSON.stringify({ active }),
     }).then((x) => x.json()).catch(() => ({}));
     toast(r.pairing ? "Сопряжение включено" : "Сопряжение выключено");
+  });
+  $("exitModeBtn").addEventListener("click", async () => {
+    const r = await fetch("/api/mode", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: 0 }),
+    }).then((x) => x.json()).catch(() => ({}));
+    if (r.success) toast("Выход из AP, подключение к сети...");
   });
   $("psuResetBtn").addEventListener("click", () => {
     if (confirm("Сбросить БП к заводским настройкам?")) send({ action: "psuReset" });

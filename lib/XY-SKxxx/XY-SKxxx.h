@@ -177,8 +177,8 @@ but not in the Modbus register map documentation
 // Host / WiFi module registers (Sinilink ESP8285H16 / XY-WFPOW). Writing
 // {0x3B3A, 2, 4, ip_hi, ip_lo} to 0x0030-0x0034 activates the WiFi host.
 #define REG_MASTER     0x0030  // Host type, 0x3B3A = WiFi host, Read and Write
-#define REG_WIFI_CONFIG 0x0031 // WiFi configuration status, 0=None, 1=Touch, 2=AP, Read and Write
-#define REG_WIFI_STATUS 0x0032 // WiFi status, 0=Invalid, 1=Router, 2=Server, 3=Touch, 4=AP/Connected, 5=Online, Read and Write
+#define REG_WIFI_CONFIG 0x0031 // WiFi configuration status, 0=None, 1=Touch, 2=AP, 3=PAIR, 4=-NULL-, 5=-TOUCH-, 6=-AP-CH-, 7=-ROUT--, 8=-SERVER- (only 1 and 2 can be selected from ui)  Read and Write
+#define REG_WIFI_STATUS 0x0032 // WiFi status, 0=NULL (ip --.--.--.--, indicator blinks slow), 1=TOUCH (ip --.--.--.--, indicator blinks 4 fast then stops), 2=AP (ip --.--.--.--, indicator blinks fast), 3=ROUT (ip shown, indicator blinks 2 slow 2 fast), 4=SERVER (ip shown), Read and Write
 #define REG_IPV4_H      0x0033  // IP address high word (octet1<<8 | octet2), Read and Write
 #define REG_IPV4_L      0x0034  // IP address low word (octet3<<8 | octet4), Read and Write
 
