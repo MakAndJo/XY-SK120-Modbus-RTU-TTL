@@ -21,16 +21,14 @@
   </div>
 
   <header>
-    <div class="header-row">
-      <h1><span id="deviceName">XY PSU</span></h1>
-      <div class="device-bar row">
-        <div class="row">
-          <span id="conn" class="dot dot-off"></span>
-          <span id="connText">offline</span>
-        </div>
-        <select id="deviceSelect" class="device-select"></select>
-        <button id="logoutBtn" class="btn btn-sm btn-ghost hidden" title="Выйти">⏻</button>
+    <h1><span id="deviceName">XY PSU</span></h1>
+    <div class="device-bar row">
+      <div class="row">
+        <span id="conn" class="dot dot-off"></span>
+        <span id="connText">offline</span>
       </div>
+      <select id="deviceSelect" class="device-select"></select>
+      <button id="logoutBtn" class="btn btn-sm btn-ghost hidden" title="Выйти">⏻</button>
     </div>
   </header>
 
@@ -44,9 +42,9 @@
         <div id="pairHint" style="color:var(--muted);font-size:0.85rem"></div>
       </section>
 
-      <section class="card" id="live" style="user-select: none;">
+      <section class="card" id="live">
         <div class="row">
-          <div class="col big" style="flex: 1;margin: -6px 0;">
+          <div class="col big">
             <div class="val"><output id="voltage">--</output></div>
             <div class="val"><output id="current">--</output></div>
             <div class="val"><output id="power">--</output></div>
