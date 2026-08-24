@@ -147,6 +147,8 @@ output { font-size: var(--output-size); font-weight: 700; line-height: 1; font-v
   color: #fff;
   background: var(--accent);
   transition: filter .15s;
+  min-width: 80px;
+  min-height: 16px;
 }
 .btn:hover { filter: brightness(1.1); }
 .btn:active { filter: brightness(.9); }
