@@ -165,48 +165,11 @@ static void handleApiPair() {
   webServer.send(200, "application/json", json);
 }
 
-// ---- Provisioning (AP mode only) -------------------------------------------
-
-static void handleSave() {
-  if (webServer.method() != HTTP_POST) {
-    webServer.send(405, "text/plain", "Method Not Allowed");
-    return;
-  }
-  DynamicJsonDocument doc(512);
-  DeserializationError error = deserializeJson(doc, webServer.arg("plain"));
-  if (error) {
-    webServer.send(400, "text/plain", "Bad JSON");
-    return;
-  }
-  String ssid = doc["ssid"] | "";
-  String pass = doc["pass"] | "";
-  ssid.trim();
-  if (ssid.length() == 0) {
-    webServer.send(400, "text/plain", "Missing SSID");
-    return;
-  }
-  if (!saveWiFiCredentialsToNVS(ssid, pass, 1)) {
-    webServer.send(500, "text/plain", "Save failed");
-    return;
-  }
-  webServer.send(200, "text/plain", "OK");
-  Serial.printf("[WEB] Saved credentials for '%s', switching to STA...\n", ssid.c_str());
-
-  // Give the response time to flush, then switch to station mode.
-  delay(300);
-  stopCaptivePortal();
-  WiFi.mode(WIFI_STA);
-  connectToSavedNetworks();
-}
-
 static void handleNotFound() {
-  if (serveModeAp) {
-    // Any hostname resolves to us via the captive portal DNS: redirect to /.
-    webServer.sendHeader("Location", "/", true);
-    webServer.send(302, "text/html", "");
-    return;
-  }
-  webServer.send(404, "text/plain", "Not found");
+  // Captive portal in both modes: any hostname resolves to us and redirects to
+  // the panel (catch-all *.local, connectivity probes, etc.).
+  webServer.sendHeader("Location", "/", true);
+  webServer.send(302, "text/html", "");
 }
 
 // ---- Server lifecycle ------------------------------------------------------
@@ -222,7 +185,6 @@ static void registerRoutes() {
   webServer.on("/api/wifi", handleApiWifi);
   webServer.on("/api/mqtt", handleApiMqtt);
   webServer.on("/api/pair", handleApiPair);
-  webServer.on("/save", handleSave);
   webServer.onNotFound(handleNotFound);
 }
 
@@ -231,10 +193,14 @@ static void webTask(void* param) {
   webTaskActive = true;
   registerRoutes();
   webServer.begin();
+  // Captive-portal DNS in both modes: in AP it points at the softAP, in STA at
+  // our LAN IP, so any hostname / connectivity probe lands on the panel.
+  IPAddress dnsTarget = serveModeAp ? IPAddress(192, 168, 4, 1) : WiFi.localIP();
+  dnsServer.start(DNS_PORT, "*", dnsTarget);
 
   unsigned long startMs = millis();
   while (portalRunning || staRunning) {
-    if (serveModeAp) dnsServer.processNextRequest();
+    dnsServer.processNextRequest();
     webServer.handleClient();
     // Boot-time safety timeout so the device never sits in AP forever.
     // cfg-driven AP (user asked for it) has no timeout.
@@ -286,7 +252,6 @@ void startApPortal() {
   Serial.printf("[WEB] AP '%s' up, IP %s\n", PORTAL_AP_SSID, WiFi.softAPIP().toString().c_str());
   Serial.printf("[WEB] deviceId=%s pairCode=%s\n", mqttDeviceId().c_str(), mqttGetPairCode().c_str());
 
-  dnsServer.start(DNS_PORT, "*", IPAddress(192, 168, 4, 1));
   xTaskCreate(webTask, "web", 8192, NULL, 1, NULL);
 }
 
@@ -342,6 +307,12 @@ void checkWifiConfigMode() {
 
 void startLocalServer() {
   if (portalRunning || staRunning) return;
+  unsigned long waitMs = millis();
+  while (webTaskActive && millis() - waitMs < 2000) vTaskDelay(20 / portTICK_PERIOD_MS);
+  if (webTaskActive) {
+    Serial.println("[WEB] Old server task did not exit, aborting STA start");
+    return;
+  }
   serveModeAp = false;
   staRunning = true;
   Serial.printf("[WEB] Local server on %s\n", WiFi.localIP().toString().c_str());
