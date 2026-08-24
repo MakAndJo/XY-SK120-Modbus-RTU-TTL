@@ -34,12 +34,13 @@ ModbusMaster modbus;
 // WiFi host keepalive task: claims the PSU's master/status registers from the
 // very first second of boot (even while WiFi is still connecting), so the PSU
 // screen recognises the WiFi module immediately. The status is written as
-// "not connected" (0) until WiFi is up.
+// "not connected" (0) until WiFi is up. Runs fast (500ms) so the PSU never
+// times out the module presence.
 void wifiHostKeepAliveTask(void* param) {
   (void)param;
   while (true) {
     wifiModuleKeepAlive();
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
+    vTaskDelay(500 / portTICK_PERIOD_MS);
   }
 }
 
@@ -200,8 +201,11 @@ void loop() {
 
   // Periodically read fresh PSU status and publish it over MQTT only when it
   // actually changed (retained, so the server/client always has the last one).
+  // 1s cadence keeps the Modbus bus free for the REG_MASTER keep-alive, which
+  // the PSU uses to detect the WiFi module — flooding it with 250ms reads makes
+  // the block periodically drop the module.
   static unsigned long lastStatusUpdate = 0;
-  if (mqttConnected() && millis() - lastStatusUpdate > 250) {
+  if (mqttConnected() && millis() - lastStatusUpdate > 1000) {
     lastStatusUpdate = millis();
     mqttPublishStatus();
   }
@@ -214,10 +218,12 @@ void loop() {
   }
 
   // Sync the PSU RTC/weather block (Unix time + weather, ~10s like the OEM
-  // XY-WFPOW module). This feeds the standby clock/weather screen. A single
-  // failed write (bus timeout under contention) is retried next cycle.
+  // XY-WFPOW module). This feeds the standby clock/weather screen. Skipped in
+  // AP mode — the 21-register write (~60ms of bus time) contends with the
+  // REG_MASTER keep-alive and makes the block drop the WiFi tab. A single
+  // failed write is retried next cycle.
   static unsigned long lastRtcSync = 0;
-  if (millis() - lastRtcSync > 10000) {
+  if (localWifiMode() != 2 && millis() - lastRtcSync > 10000) {
     lastRtcSync = millis();
     syncRtcWeatherToPSU();
   }

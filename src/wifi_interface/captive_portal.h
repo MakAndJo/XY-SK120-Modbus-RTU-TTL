@@ -30,8 +30,13 @@ bool captivePortalActive();
 
 // React to REG_WIFI_CONFIG changes made on the block:
 //   2 -> switch to AP mode; 1 -> touch pairing (fresh code + server re-pair);
-//   0 -> normal mode. Call periodically from loop().
+//   0 -> "no pending command" (register is a one-shot trigger, 0 is ignored).
+// Call periodically from loop().
 void checkWifiConfigMode();
+
+// Current latched WiFi mode (0=normal, 1=touch/pairing, 2=ap).
+int localWifiMode();
+void resetWifiModeLatch();
 
 // Start the local server in STA mode (serves the client + API on the LAN IP).
 void startLocalServer();

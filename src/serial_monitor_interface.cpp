@@ -6,6 +6,7 @@
 #include "wifi_interface/wifi_settings.h" // Include the new wifi_settings header
 #include "wifi_interface/wifi_native.h"   // resetWiFiSettings etc.
 #include "mqtt/mqtt_manager.h"           // mqtt set/get console commands
+#include "modbus/psu_service.h"          // wifiKeepaliveSetEnabled
 
 // Include all the interface components
 #include "serial_interface/serial_interface.h"
@@ -50,6 +51,10 @@ inline void checkSerialMonitorInput(XY_SKxxx* ps, XYModbusConfig& config) {
       handleWifiSettingsCommands(); // Call the new function
     } else if (command.startsWith("mqtt ")) {
       handleMqttConsoleCommand(command);
+    } else if (command == "keepalive on") {
+      wifiKeepaliveSetEnabled(true);
+    } else if (command == "keepalive off") {
+      wifiKeepaliveSetEnabled(false);
     } else if (command == "help") {
       Serial.println("Available commands:");
       Serial.println("status - Display current status");
@@ -59,6 +64,7 @@ inline void checkSerialMonitorInput(XY_SKxxx* ps, XYModbusConfig& config) {
       Serial.println("mqtt set <host> [port] [name] - Set MQTT config");
       Serial.println("mqtt start / mqtt stop - Start/stop the MQTT client");
       Serial.println("mqtt pair - Show the current pair code");
+      Serial.println("keepalive on/off - Enable/disable the REG_MASTER keep-alive (for register probing)");
       Serial.println("help - Display available commands");
     } else {
       Serial.println("Invalid command. Type 'help' for available commands.");

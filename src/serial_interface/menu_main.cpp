@@ -7,6 +7,7 @@
 #include "menu_debug.h"
 #include "menu_cd_data.h"
 #include "menu_wifi.h"  // Include the new WiFi menu header
+#include "modbus/psu_service.h" // wifiKeepaliveSetEnabled
 
 void displayMainMenu() {
   Serial.println("\n==== Main Menu ====");
@@ -57,6 +58,10 @@ void handleMainMenu(const String& input, XY_SKxxx* ps, XYModbusConfig& config) {
     displayMainMenu();
   } else if (input.equalsIgnoreCase("info")) {
     displayDeviceInfo(ps);
+  } else if (input.equalsIgnoreCase("keepalive on")) {
+    wifiKeepaliveSetEnabled(true);
+  } else if (input.equalsIgnoreCase("keepalive off")) {
+    wifiKeepaliveSetEnabled(false);
   } else {
     Serial.println("Unknown command. Type 'help' for options.");
   }

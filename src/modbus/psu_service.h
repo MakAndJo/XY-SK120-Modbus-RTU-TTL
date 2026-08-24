@@ -89,6 +89,13 @@ void wifiModuleKeepAlive();
 // Last REG_WIFI_CONFIG value read by wifiModuleKeepAlive (0=None, 1=Touch,
 // 2=AP — set from the block itself). The mode watcher reacts to changes.
 int getWifiConfigState();
+void setWifiConfigState(int v);
+
+// Stop/start the REG_MASTER presence keep-alive. Disable it to probe or hand
+// write the WiFi module registers (0x0030-0x0034) from the serial debug menu
+// without the keep-alive overwriting them.
+void wifiKeepaliveSetEnabled(bool on);
+bool wifiKeepaliveEnabled();
 
 // Dispatch a single command {action, ...} and return the response JSON string.
 // Used by the MQTT subscriber. Returns "" for unknown actions.

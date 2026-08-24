@@ -3,6 +3,7 @@
 #include "log_utils/log_utils.h"
 #include "config_manager.h"
 #include "wifi_interface/wifi_settings.h"
+#include "wifi_interface/captive_portal.h"
 #include "mqtt/mqtt_manager.h"
 
 // Declared in main.cpp
@@ -394,41 +395,58 @@ static uint32_t ipv4FromPairCode(const String& code) {
 }
 
 // Last REG_WIFI_CONFIG value read from the block (0=None, 1=Touch, 2=AP).
-static int gWifiConfig = 0;
+// This is the immediate mode latch: it updates as soon as the register reads
+// 1 or 2 so REG_WIFI_STATUS is rewritten at once (the block waits for that to
+// acknowledge the mode). A 0 does NOT clear it — the block clears the command
+// itself after we enter the mode; only an explicit exit (local panel/reboot)
+// calls setWifiConfigState(0).
+static volatile int gWifiConfig = 0;
 int getWifiConfigState() { return gWifiConfig; }
+void setWifiConfigState(int v) { gWifiConfig = v; }
+
+// Keep-alive master write switch (serial "keepalive on/off").
+static volatile bool gKeepaliveEnabled = true;
+void wifiKeepaliveSetEnabled(bool on) {
+  gKeepaliveEnabled = on;
+  Serial.printf("[PSU] REG_MASTER keep-alive %s\n", on ? "enabled" : "DISABLED");
+}
+bool wifiKeepaliveEnabled() { return gKeepaliveEnabled; }
 
 void wifiModuleKeepAlive() {
   if (!powerSupply) return;
+  if (!gKeepaliveEnabled) return; // serial "keepalive off" — manual register probing
   IPAddress wifi = WiFi.localIP();
   uint32_t ipv4 = ((uint32_t)wifi[0] << 24) | ((uint32_t)wifi[1] << 16) |
                   ((uint32_t)wifi[2] << 8) | wifi[3];
   bool connected = (WiFi.status() == WL_CONNECTED);
   if (!connected) ipv4 = 0;
 
-  // Read the block-selected WiFi config mode (0=None, 1=Touch, 2=AP). The
-  // PSU writes this register when the user changes it in the block menu.
-  uint16_t cfg = 0;
-  lockModbus();
-  powerSupply->readRegister(REG_WIFI_CONFIG, cfg);
-  unlockModbus();
-  gWifiConfig = cfg;
+  // Mode detection: read REG_WIFI_CONFIG every 2nd cycle (1s), latch 1/2.
+  static bool tick = false;
+  tick = !tick;
+  if (tick) {
+    uint16_t cfg = 0;
+    lockModbus();
+    bool cfgOk = powerSupply->readRegister(REG_WIFI_CONFIG, cfg);
+    if (cfgOk && (cfg == 1 || cfg == 2)) gWifiConfig = cfg;
+    unlockModbus();
+  }
 
-  // WiFi host status register (0x0032):
-  //   0 no network; 1 router/local; 3 touch pairing; 4 AP; 5 server online
+  // REG_WIFI_STATUS: 4 keeps the module present in normal modes; in AP mode the
+  // user wants the block to show the AP state, so report 2 (AP) there.
+  int mode = gWifiConfig;
   uint16_t status = 0;
-  if (cfg == 2) {
-    status = 4; // AP mode requested from the block
-  } else if (connected) {
-    if (mqttConnected()) status = 5;
-    else if (cfg == 1) status = 3;
-    else status = 1;
+  if (mode == 2) {
+    status = 2; // AP
+  } else if (mode != 0 || connected) {
+    status = 4; // SERVER / module present
   }
 
   // Alternating pair code / real IP only for the physical block's WiFi menu.
   // Never in AP mode (the AP shows its own provisioning IP).
   uint32_t ipToWrite = ipv4;
   String pair = mqttGetPairCode();
-  if (connected && cfg != 2 && pair.length() == 8 && (millis() / 1000) & 1) {
+  if (connected && mode != 2 && pair.length() == 8 && (millis() / 1000) & 1) {
     ipToWrite = ipv4FromPairCode(pair);
   }
 
@@ -436,11 +454,26 @@ void wifiModuleKeepAlive() {
   uint16_t tail[3] = { status,
                        (uint16_t)((ipToWrite >> 16) & 0xFFFF),
                        (uint16_t)(ipToWrite & 0xFFFF) };
+
+  // Block has a ~5s watchdog on REG_MASTER: write both registers every cycle
+  // (500ms) and retry immediately on any miss.
   lockModbus();
   bool w1 = powerSupply->writeRegister(REG_MASTER, master);
   bool w2 = powerSupply->writeRegisters(REG_WIFI_STATUS, 3, tail);
   if (!w1 || !w2) {
-    LOG_ERROR("WiFi host keep-alive write failed");
+    w1 = powerSupply->writeRegister(REG_MASTER, master);
+    w2 = powerSupply->writeRegisters(REG_WIFI_STATUS, 3, tail);
+    if (!w1 || !w2) {
+      static uint32_t failCount = 0;
+      static unsigned long lastLogMs = 0;
+      failCount++;
+      if (millis() - lastLogMs > 10000) {
+        lastLogMs = millis();
+        Serial.printf("%sERROR: WiFi host keep-alive write failed (%lu)\n",
+                      getLogTimestamp().c_str(), (unsigned long)failCount);
+        failCount = 0;
+      }
+    }
   }
   unlockModbus();
 }
@@ -470,6 +503,7 @@ String buildLocalStatusJSON() {
   doc["ssid"] = connected ? WiFi.SSID() : "";
   doc["ip"] = WiFi.localIP().toString();
   doc["rssi"] = connected ? WiFi.RSSI() : -127;
+  doc["mode"] = localWifiMode();
   String response;
   serializeJson(doc, response);
   return response;
