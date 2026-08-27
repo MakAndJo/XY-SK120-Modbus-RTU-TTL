@@ -13,23 +13,24 @@ void lockModbus();
 void unlockModbus();
 
 // Status snapshot structure (kept identical to the former web interface so the
-// external UI contract stays the same).
+// external UI contract stays the same). Double so ArduinoJson serializes clean
+// values (20.9 not 20.89999962) — see readPSUStatusBatched.
 struct PSUStatusData {
   bool valid;
-  float voltage, current, power;
-  float inputVoltage;
-  float voltageSet, currentSet, powerSet;
+  double voltage, current, power;
+  double inputVoltage;
+  double voltageSet, currentSet, powerSet;
   bool outputEnabled, keyLocked, cpModeEnabled;
   uint16_t cvccMode;
   OperatingMode operatingMode;
   uint16_t model, version;
-  float lvp, ovp, ocp, opp, otp;
+  double lvp, ovp, ocp, opp, otp;
 
-  float ampHours;
-  float wattHours;
+  double ampHours;
+  double wattHours;
   uint32_t outputTime;
-  float internalTemp;
-  float externalTemp;
+  double internalTemp;
+  double externalTemp;
   uint16_t protectionStatus;
 
   bool tempCelsius;
@@ -40,15 +41,15 @@ struct PSUStatusData {
   bool beeper;
   uint8_t memoryGroup;
   bool mpptEnabled;
-  float mpptThreshold;
-  float batteryCutoff;
+  double mpptThreshold;
+  double batteryCutoff;
   bool outputOnAtStartup;
-  float etp;
+  double etp;
 
   bool bchEnabled;
-  float bchThreshold;
+  double bchThreshold;
   bool btfEnabled;
-  float btfCutoff;
+  double btfCutoff;
   bool clofEnabled;
 
   uint16_t hostType;
@@ -57,8 +58,8 @@ struct PSUStatusData {
   uint32_t ipv4;
 
   uint16_t ohpHours, ohpMinutes;
-  float overAmpHours;
-  float overWattHours;
+  double overAmpHours;
+  double overWattHours;
 };
 
 // Read fresh PSU status in batched Modbus reads. Returns false if the PSU

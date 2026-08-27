@@ -2,20 +2,19 @@
 #define CAPTIVE_PORTAL_H
 
 #include <Arduino.h>
-#include <WebServer.h>
-#include <DNSServer.h>
 
 // SoftAP SSID used for first-boot / provisioning mode
 #define PORTAL_AP_SSID "XY-SK150-Setup"
 
 // Local web server: serves the full embedded client (index.html/main.js/
-// style.css, gzipped from PROGMEM) plus the /api/* endpoints, in both STA mode
-// (reachable on the LAN IP) and AP mode (provisioning). The boot-time probe
-// fetch('/api/status') in the client decides "local" vs "server" mode.
+// style.css, gzipped from PROGMEM) plus a WebSocket channel (/ws) for status +
+// commands, and a few one-off HTTP config endpoints (/api/wifi, /api/mqtt,
+// /api/mode). Runs on ESPAsyncWebServer, single instance serving both STA
+// (LAN IP) and AP (192.168.4.1) interfaces.
 
 // Start the AP + captive portal in a background task. The device serves the
-// client + a provisioning form for the home network. The portal stops itself
-// once the user saves working credentials (or after a safety timeout).
+// client from the softAP. The portal stops itself once the user saves working
+// credentials (or after a safety timeout).
 void startCaptivePortal();
 
 // AP mode requested from the block (REG_WIFI_CONFIG=2): like the portal but
@@ -29,19 +28,20 @@ void stopCaptivePortal();
 bool captivePortalActive();
 
 // React to REG_WIFI_CONFIG changes made on the block:
-//   2 -> switch to AP mode; 1 -> touch pairing (fresh code + server re-pair);
+//   2 -> switch to AP mode; 1 -> touch (no-op now, kept for the block);
 //   0 -> "no pending command" (register is a one-shot trigger, 0 is ignored).
 // Call periodically from loop().
 void checkWifiConfigMode();
 
-// Current latched WiFi mode (0=normal, 1=touch/pairing, 2=ap).
+// Current latched WiFi mode (0=normal, 1=touch, 2=ap).
 int localWifiMode();
 void resetWifiModeLatch();
 
 // Start the local server in STA mode (serves the client + API on the LAN IP).
 void startLocalServer();
 
-// Stop the STA local server.
+// Stop the STA local server. (The async server is shared and keeps running;
+// kept for API compatibility.)
 void stopLocalServer();
 
 // True while the STA local server is serving.

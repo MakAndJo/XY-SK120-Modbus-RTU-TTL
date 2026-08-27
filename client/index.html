@@ -8,43 +8,24 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- Login overlay (server mode) -->
-  <div id="loginOverlay" class="hidden">
-    <div class="login-card">
-      <h1>XY PSU</h1>
-      <input id="loginUser" placeholder="Логин" autocomplete="username">
-      <input id="loginPass" type="password" placeholder="Пароль" autocomplete="current-password">
-      <button id="loginBtn" class="btn btn-primary">Войти</button>
-      <button id="registerBtn" class="btn btn-ghost">Регистрация</button>
-      <div id="loginMsg"></div>
-    </div>
-  </div>
-
   <header>
-    <h1><span id="deviceName">XY PSU</span></h1>
-    <div class="device-bar row">
-      <div class="row">
-        <span id="conn" class="dot dot-off"></span>
-        <span id="connText">offline</span>
+    <div class="header-row">
+      <h1><span id="deviceName">XY PSU</span></h1>
+      <div class="device-bar row">
+        <div class="row">
+          <span id="conn" class="dot dot-off"></span>
+          <span id="connText">offline</span>
+        </div>
       </div>
-      <select id="deviceSelect" class="device-select"></select>
-      <button id="logoutBtn" class="btn btn-sm btn-ghost hidden" title="Выйти">⏻</button>
     </div>
   </header>
 
   <main>
     <!-- Tab: Главная -->
     <tab id="page-main" class="tabpage">
-      <section class="card hidden" id="pairCard">
-        <h2>Привязка к серверу</h2>
-        <div style="color:var(--muted);font-size:0.9rem">Введите этот код в приложении XY PSU → Устройства → Добавить:</div>
-        <div id="pairCode" style="font-size:2.6em;font-weight:700;letter-spacing:0.15em;margin:10px 0;color:var(--green)">--</div>
-        <div id="pairHint" style="color:var(--muted);font-size:0.85rem"></div>
-      </section>
-
-      <section class="card" id="live">
+      <section class="card" id="live" style="user-select: none;">
         <div class="row">
-          <div class="col big">
+          <div class="col big" style="flex: 1;margin: -6px 0;">
             <div class="val"><output id="voltage">--</output></div>
             <div class="val"><output id="current">--</output></div>
             <div class="val"><output id="power">--</output></div>
@@ -199,21 +180,27 @@
       </section>
 
       <section class="card" id="mqttCard">
-        <h2>Сервер</h2>
+        <h2>MQTT</h2>
         <table class="editable row">
           <tr><td>Адрес</td><td id="mqttHost">--</td></tr>
           <tr><td>Порт</td><td id="mqttPort">--</td></tr>
+          <tr><td>Логин</td><td id="mqttUser">--</td></tr>
           <tr><td>Статус</td><td id="mqttState">--</td></tr>
-          <tr id="mqttPairRow"><td>Код подключения</td><td id="mqttPairCode">--</td></tr>
         </table>
-        <div class="row" id="pairControls">
-          <button id="pairBtn" class="btn btn-ghost" title="Привязать к серверу">Сопряжение</button>
-          <button id="exitModeBtn" class="btn btn-sm btn-danger hidden" title="Выйти из режима AP">Выйти из AP</button>
-        </div>
         <div class="row wrap">
           <input id="mqttNewHost" type="text" placeholder="IP или hostname">
           <input id="mqttNewPort" type="number" placeholder="1883" value="1883" style="width:90px">
-          <button id="mqttSaveBtn" class="btn btn-ghost" title="Сохранить сервер">Сохранить</button>
+        </div>
+        <div class="row wrap">
+          <input id="mqttNewUser" type="text" placeholder="Логин (необязательно)" autocomplete="off">
+          <input id="mqttNewPass" type="password" placeholder="Пароль" autocomplete="new-password">
+        </div>
+        <div class="row wrap">
+          <label class="row"><input id="mqttEnable" type="checkbox"> Подключаться к брокеру</label>
+          <button id="mqttSaveBtn" class="btn btn-ghost">Сохранить</button>
+        </div>
+        <div class="row">
+          <button id="exitModeBtn" class="btn btn-sm btn-danger hidden" title="Выйти из режима AP">Выйти из AP</button>
         </div>
       </section>
 
@@ -223,30 +210,12 @@
 
       <footer><span class="model"></span></footer>
     </tab>
-
-    <!-- Tab: Устройства -->
-    <tab id="page-devices" class="tabpage hidden">
-      <section class="card">
-        <h2>Устройства</h2>
-        <table id="serversList" class="editable row"></table>
-        <div class="row wrap">
-          <input id="newCode" type="text" placeholder="8-значный код с экрана устройства" autocomplete="off" inputmode="numeric">
-          <button id="addOk" class="btn btn-ghost" title="Привязать устройство">+</button>
-        </div>
-        <div style="color:var(--muted);font-size:0.85rem;margin-top:10px">
-          Код показан на дисплее блока (в меню настройки WiFi) и в локальном интерфейсе блока, пока он не привязан.
-        </div>
-      </section>
-      <footer></footer>
-    </tab>
   </main>
-
 
   <nav id="tabbar">
     <button data-page="main" class="active">Главная</button>
     <button data-page="prot">Профили</button>
     <button data-page="cfg">Настройки</button>
-    <button data-page="devices">Устройства</button>
   </nav>
 
   <div id="toast"></div>

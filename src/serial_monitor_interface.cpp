@@ -61,9 +61,8 @@ inline void checkSerialMonitorInput(XY_SKxxx* ps, XYModbusConfig& config) {
       Serial.println("config - Display current configuration");
       Serial.println("wifi - Configure WiFi settings");
       Serial.println("mqtt get - Show MQTT config");
-      Serial.println("mqtt set <host> [port] [name] - Set MQTT config");
-      Serial.println("mqtt start / mqtt stop - Start/stop the MQTT client");
-      Serial.println("mqtt pair - Show the current pair code");
+      Serial.println("mqtt set <host> [port] [user] [pass] - Set MQTT config");
+      Serial.println("mqtt on / mqtt off - Enable/disable the MQTT client");
       Serial.println("keepalive on/off - Enable/disable the REG_MASTER keep-alive (for register probing)");
       Serial.println("help - Display available commands");
     } else {
@@ -126,24 +125,28 @@ void handleWifiSettingsCommands() {
   }
 }
 
-// Handle 'mqtt set/get/start/stop' console commands
+// Handle 'mqtt get/set/on/off' console commands
 void handleMqttConsoleCommand(const String& command) {
   if (command == "mqtt get") {
     if (!mqttConfigLoaded()) {
       Serial.println("MQTT: not configured");
       return;
     }
-    Serial.printf("MQTT: host=%s port=%d name=%s state=%s\n",
-                  mqttHost().c_str(), mqttPort(), mqttDeviceName().c_str(),
+    Serial.printf("MQTT: host=%s port=%d user=%s name=%s enabled=%d state=%s\n",
+                  mqttHost().c_str(), mqttPort(), mqttUser().c_str(),
+                  mqttDeviceName().c_str(), (int)mqttEnabled(),
                   mqttConnected() ? "connected" : "disconnected");
-  } else if (command == "mqtt pair") {
-    String code = mqttGetPairCode();
-    Serial.printf("MQTT: pair code=%s\n", code.length() ? code.c_str() : "(none - device is bound)");
+  } else if (command == "mqtt on") {
+    mqttSetEnabled(true);
+    mqttStart();
+  } else if (command == "mqtt off") {
+    mqttSetEnabled(false);
+    mqttStop();
   } else if (command.startsWith("mqtt set ")) {
     String args = command.substring(9);
     args.trim();
     if (args.length() == 0) {
-      Serial.println("Usage: mqtt set <host> [port] [name]");
+      Serial.println("Usage: mqtt set <host> [port] [user] [pass]");
       return;
     }
     int space = args.indexOf(' ');
@@ -152,27 +155,24 @@ void handleMqttConsoleCommand(const String& command) {
     rest.trim();
 
     uint16_t port = 1883;
-    String name;
+    String user, pass;
     if (rest.length() > 0) {
       int s2 = rest.indexOf(' ');
       String portStr = (s2 > 0) ? rest.substring(0, s2) : rest;
       port = (uint16_t)portStr.toInt();
       rest = (s2 > 0) ? rest.substring(s2 + 1) : "";
       rest.trim();
-      if (rest.length() > 0) name = rest;
+      if (rest.length() > 0) {
+        int s3 = rest.indexOf(' ');
+        user = (s3 > 0) ? rest.substring(0, s3) : rest;
+        rest = (s3 > 0) ? rest.substring(s3 + 1) : "";
+        rest.trim();
+        if (rest.length() > 0) pass = rest;
+      }
     }
-    if (name.length() == 0) name = "XY-SK150S";
-    mqttSaveConfig(host, port);
-    Preferences prefs;
-    prefs.begin(MQTT_NAMESPACE, false);
-    prefs.putString(MQTT_NAME_KEY, name);
-    prefs.end();
-    Serial.println("MQTT config saved. Restart device or use 'mqtt start'.");
-  } else if (command == "mqtt start") {
-    mqttStart();
-  } else if (command == "mqtt stop") {
-    mqttStop();
+    mqttSaveConfig(host, port, user, pass);
+    Serial.println("MQTT config saved. Use 'mqtt on' to connect.");
   } else {
-    Serial.println("Usage: mqtt get | mqtt set <host> [port] [name] | mqtt start | mqtt stop | mqtt pair");
+    Serial.println("Usage: mqtt get | mqtt set <host> [port] [user] [pass] | mqtt on | mqtt off");
   }
 }

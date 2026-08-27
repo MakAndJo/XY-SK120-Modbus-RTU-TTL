@@ -6,100 +6,87 @@
 #include "webui/embedded_client.h"
 #include <WiFi.h>
 #include <ArduinoJson.h>
+#include <DNSServer.h>
+#include <ESPAsyncWebServer.h>
 
 extern XY_SKxxx* powerSupply; // defined in main.cpp
 
-static WebServer webServer(80);
+static AsyncWebServer asyncServer(80);
+static AsyncWebSocket ws("/ws");
 static DNSServer dnsServer;
 static const byte DNS_PORT = 53;
 
 static volatile bool portalRunning = false;  // AP provisioning mode
-static volatile bool staRunning = false;     // STA local server mode
 static volatile bool serveModeAp = false;
 static bool portalTimeout = true;            // boot-time 10min safety timeout
-static volatile bool webTaskActive = false;  // web task currently running
+static bool serverStarted = false;           // async server + task running
+static bool dnsRunning = false;
 
 // ---- Embedded client (gzipped PROGMEM) -------------------------------------
 
-static void serveEmbedded(const char* path) {
+static void serveEmbedded(AsyncWebServerRequest* request, const char* path) {
   for (size_t i = 0; i < embeddedFilesCount; i++) {
     if (strcmp(embeddedFiles[i].path, path) == 0) {
-      webServer.sendHeader("Content-Encoding", "gzip");
-      webServer.sendHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
-      webServer.send_P(200, embeddedFiles[i].mime, (const char*)embeddedFiles[i].data,
-                       embeddedFiles[i].len);
+      AsyncWebServerResponse* r = request->beginResponse_P(
+          200, embeddedFiles[i].mime, embeddedFiles[i].data,
+          embeddedFiles[i].len);
+      r->addHeader("Content-Encoding", "gzip");
+      r->addHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+      request->send(r);
       return;
     }
   }
-  webServer.send(404, "text/plain", "Not found");
+  request->send(404, "text/plain", "Not found");
 }
 
-static void handleRoot() {
-  serveEmbedded("/index.html");
+// ---- WebSocket: status pushes + command channel ----------------------------
+
+static void onWsEvent(AsyncWebSocket* server, AsyncWebSocketClient* client,
+                      AwsEventType type, void* arg, uint8_t* data, size_t len) {
+  if (type == WS_EVT_CONNECT) {
+    client->text(buildLocalStatusJSON()); // fresh state right away
+  } else if (type == WS_EVT_DATA) {
+    AwsFrameInfo* info = (AwsFrameInfo*)arg;
+    if (info->opcode == WS_TEXT && !info->index && info->final && info->len == len) {
+      String payload;
+      payload.reserve(len + 1);
+      for (size_t i = 0; i < len; i++) payload += (char)data[i];
+      DynamicJsonDocument doc(2048);
+      if (deserializeJson(doc, payload)) return;
+      String action = doc["action"] | "";
+      if (action.length() == 0) return;
+      String response = handleMqttAction(action, payload.c_str());
+      if (response.length() > 0) client->text(response);
+    }
+  }
 }
 
-// ---- API -------------------------------------------------------------------
+// ---- HTTP config endpoints -------------------------------------------------
 
-static void handleApiStatus() {
-  webServer.send(200, "application/json", buildLocalStatusJSON());
+// AsyncWebServer delivers the raw POST body through the onBody callback. We
+// accumulate it into request->_tempObject, then read it in the request handler.
+static void collectBody(AsyncWebServerRequest* request, uint8_t* data, size_t len,
+                        size_t index, size_t total) {
+  (void)index; (void)total;
+  if (!request->_tempObject) request->_tempObject = new String();
+  ((String*)request->_tempObject)->concat((char*)data, len);
 }
 
-static void handleApiInfo() {
+static String takeBody(AsyncWebServerRequest* request) {
+  if (request->_tempObject) {
+    String* s = (String*)request->_tempObject;
+    String out = *s;
+    delete s;
+    request->_tempObject = nullptr;
+    return out;
+  }
+  return request->arg("plain");
+}
+
+static void handleApiWifiPost(AsyncWebServerRequest* request) {
   DynamicJsonDocument doc(512);
-  doc["deviceId"] = mqttDeviceId();
-  doc["name"] = mqttDeviceName();
-  doc["model"] = "XY-SK150S";
-  doc["bound"] = mqttGetBound();
-  doc["pairCode"] = mqttGetPairCode();
-  doc["mqttHost"] = mqttHost();
-  doc["mqttPort"] = mqttPort();
-  doc["mqttConnected"] = mqttConnected();
-  doc["ssid"] = isWiFiConnected() ? getWiFiSSID() : "";
-  doc["ip"] = getWiFiIP();
-  doc["rssi"] = getWiFiRSSI();
-  String json;
-  serializeJson(doc, json);
-  webServer.send(200, "application/json", json);
-}
-
-static void handleApiCmd() {
-  if (webServer.method() != HTTP_POST) {
-    webServer.send(405, "text/plain", "Method Not Allowed");
-    return;
-  }
-  String payload = webServer.arg("plain");
-  if (payload.length() == 0) {
-    webServer.send(400, "application/json", "{\"error\":\"empty body\"}");
-    return;
-  }
-  DynamicJsonDocument doc(2048);
-  DeserializationError error = deserializeJson(doc, payload);
-  if (error) {
-    webServer.send(400, "application/json", "{\"error\":\"bad json\"}");
-    return;
-  }
-  String action = doc["action"] | "";
-  if (action.length() == 0) {
-    webServer.send(400, "application/json", "{\"error\":\"missing action\"}");
-    return;
-  }
-  String response = handleMqttAction(action, payload.c_str());
-  if (response.length() == 0) {
-    webServer.send(400, "application/json", "{\"error\":\"unknown action\"}");
-    return;
-  }
-  webServer.send(200, "application/json", response);
-}
-
-static void handleApiWifi() {
-  if (webServer.method() == HTTP_GET) {
-    webServer.send(200, "application/json", getWifiStatus());
-    return;
-  }
-  DynamicJsonDocument doc(512);
-  DeserializationError error = deserializeJson(doc, webServer.arg("plain"));
-  if (error) {
-    webServer.send(400, "application/json", "{\"error\":\"bad json\"}");
+  if (deserializeJson(doc, takeBody(request))) {
+    request->send(400, "application/json", "{\"error\":\"bad json\"}");
     return;
   }
   String ssid = doc["ssid"] | "";
@@ -107,181 +94,135 @@ static void handleApiWifi() {
   int priority = doc["priority"] | -1;
   ssid.trim();
   if (ssid.length() == 0) {
-    webServer.send(400, "application/json", "{\"error\":\"missing ssid\"}");
+    request->send(400, "application/json", "{\"error\":\"missing ssid\"}");
     return;
   }
   bool ok = saveWiFiCredentialsToNVS(ssid, pass, priority);
   if (ok) connectToSavedNetworks();
-  String json = ok ? "{\"success\":true}" : "{\"success\":false}";
-  webServer.send(ok ? 200 : 500, "application/json", json);
+  request->send(ok ? 200 : 500, "application/json", ok ? "{\"success\":true}" : "{\"success\":false}");
 }
 
-static void handleApiMqtt() {
-  if (webServer.method() != HTTP_POST) {
-    webServer.send(405, "text/plain", "Method Not Allowed");
-    return;
-  }
+static void handleApiMqttPost(AsyncWebServerRequest* request) {
   DynamicJsonDocument doc(256);
-  DeserializationError error = deserializeJson(doc, webServer.arg("plain"));
-  if (error) {
-    webServer.send(400, "application/json", "{\"error\":\"bad json\"}");
+  if (deserializeJson(doc, takeBody(request))) {
+    request->send(400, "application/json", "{\"error\":\"bad json\"}");
     return;
   }
   String host = doc["host"] | "";
   host.trim();
   if (host.length() == 0) {
-    webServer.send(400, "application/json", "{\"error\":\"missing host\"}");
+    request->send(400, "application/json", "{\"error\":\"missing host\"}");
     return;
   }
   uint16_t port = (uint16_t)(doc["port"] | 1883);
-  mqttSaveConfig(host, port);
-  webServer.send(200, "application/json", "{\"success\":true}");
+  String user = doc["user"] | "";
+  String pass = doc["pass"] | "";
+  bool enable = doc["enable"] | false;
+  mqttSaveConfig(host, port, user, pass);
+  mqttSetEnabled(enable);
+  request->send(200, "application/json", "{\"success\":true}");
 }
 
-static void handleApiPair() {
-  if (webServer.method() == HTTP_GET) {
-    DynamicJsonDocument out(128);
-    out["pairing"] = mqttPairingActive();
-    out["bound"] = mqttGetBound();
-    out["pairCode"] = mqttGetPairCode();
-    String json;
-    serializeJson(out, json);
-    webServer.send(200, "application/json", json);
+static void handleApiModePost(AsyncWebServerRequest* request) {
+  DynamicJsonDocument doc(64);
+  deserializeJson(doc, takeBody(request));
+  int want = doc["mode"] | 0;
+  if (want != 0) {
+    request->send(400, "application/json", "{\"error\":\"unsupported mode\"}");
     return;
   }
-  DynamicJsonDocument doc(128);
-  deserializeJson(doc, webServer.arg("plain"));
-  bool active = doc["active"] | true;
-  if (active) {
-    mqttRequestRepair();
-    mqttStart();
-  } else {
-    resetWifiModeLatch();
-    mqttCancelRepair();
-    mqttStop();
+  // Exit AP from the panel: back to station + normal mode. Also write
+  // REG_WIFI_CONFIG back to None so the block leaves the mode.
+  resetWifiModeLatch();
+  if (powerSupply) {
+    lockModbus();
+    powerSupply->writeRegister(REG_WIFI_CONFIG, 0);
+    unlockModbus();
   }
-  DynamicJsonDocument r(64);
-  r["success"] = true;
-  r["pairing"] = mqttPairingActive();
-  String json;
-  serializeJson(r, json);
-  webServer.send(200, "application/json", json);
+  if (captivePortalActive()) {
+    stopCaptivePortal();
+    WiFi.mode(WIFI_STA);
+    connectToSavedNetworks();
+  }
+  mqttStop();
+  request->send(200, "application/json", "{\"success\":true}");
 }
 
-static void handleApiMode() {
-  if (webServer.method() == HTTP_GET) {
+static void registerRoutes() {
+  asyncServer.on("/", HTTP_GET, [](AsyncWebServerRequest* r) { serveEmbedded(r, "/index.html"); });
+  asyncServer.on("/index.html", HTTP_GET, [](AsyncWebServerRequest* r) { serveEmbedded(r, "/index.html"); });
+  asyncServer.on("/main.js", HTTP_GET, [](AsyncWebServerRequest* r) { serveEmbedded(r, "/main.js"); });
+  asyncServer.on("/style.css", HTTP_GET, [](AsyncWebServerRequest* r) { serveEmbedded(r, "/style.css"); });
+
+  asyncServer.on("/api/wifi", HTTP_GET, [](AsyncWebServerRequest* r) {
+    r->send(200, "application/json", getWifiStatus());
+  });
+  asyncServer.on("/api/wifi", HTTP_POST, handleApiWifiPost, NULL, collectBody);
+  asyncServer.on("/api/mqtt", HTTP_POST, handleApiMqttPost, NULL, collectBody);
+
+  asyncServer.on("/api/mode", HTTP_GET, [](AsyncWebServerRequest* r) {
     DynamicJsonDocument out(32);
     out["mode"] = localWifiMode();
     String json;
     serializeJson(out, json);
-    webServer.send(200, "application/json", json);
-    return;
-  }
-  DynamicJsonDocument doc(64);
-  deserializeJson(doc, webServer.arg("plain"));
-  int want = doc["mode"] | 0;
-  if (want == 0) {
-    // Exit AP / pairing from the panel: back to station + normal mode. Also
-    // write REG_WIFI_CONFIG back to None so the block leaves the mode even if
-    // it kept the register latched at 2 after our status acknowledgment.
-    resetWifiModeLatch();
-    if (powerSupply) {
-      lockModbus();
-      powerSupply->writeRegister(REG_WIFI_CONFIG, 0);
-      unlockModbus();
-    }
-    if (captivePortalActive()) {
-      stopCaptivePortal();
-      WiFi.mode(WIFI_STA);
-      connectToSavedNetworks();
-    }
-    mqttCancelRepair();
-    mqttStop();
-    DynamicJsonDocument r(32);
-    r["success"] = true;
-    String json;
-    serializeJson(r, json);
-    webServer.send(200, "application/json", json);
-    return;
-  }
-  webServer.send(400, "application/json", "{\"error\":\"unsupported mode\"}");
+    r->send(200, "application/json", json);
+  });
+  asyncServer.on("/api/mode", HTTP_POST, handleApiModePost, NULL, collectBody);
+
+  // Captive portal: any hostname resolves to us and redirects to the panel.
+  asyncServer.onNotFound([](AsyncWebServerRequest* r) { r->redirect("/"); });
+
+  ws.onEvent(onWsEvent);
+  asyncServer.addHandler(&ws);
 }
 
-static void handleNotFound() {
-  // Captive portal in both modes: any hostname resolves to us and redirects to
-  // the panel (catch-all *.local, connectivity probes, etc.).
-  webServer.sendHeader("Location", "/", true);
-  webServer.send(302, "text/html", "");
-}
-
-// ---- Server lifecycle ------------------------------------------------------
-
-static void registerRoutes() {
-  webServer.on("/", handleRoot);
-  webServer.on("/index.html", [] { serveEmbedded("/index.html"); });
-  webServer.on("/main.js", [] { serveEmbedded("/main.js"); });
-  webServer.on("/style.css", [] { serveEmbedded("/style.css"); });
-  webServer.on("/api/status", handleApiStatus);
-  webServer.on("/api/info", handleApiInfo);
-  webServer.on("/api/cmd", handleApiCmd);
-  webServer.on("/api/wifi", handleApiWifi);
-  webServer.on("/api/mqtt", handleApiMqtt);
-  webServer.on("/api/pair", handleApiPair);
-  webServer.on("/api/mode", handleApiMode);
-  webServer.onNotFound(handleNotFound);
-}
+// ---- Background task: DNS + status broadcast --------------------------------
 
 static void webTask(void* param) {
   (void)param;
-  webTaskActive = true;
-  registerRoutes();
-  webServer.begin();
-  // Captive-portal DNS in both modes: in AP it points at the softAP, in STA at
-  // our LAN IP, so any hostname / connectivity probe lands on the panel.
-  IPAddress dnsTarget = serveModeAp ? IPAddress(192, 168, 4, 1) : WiFi.localIP();
-  dnsServer.start(DNS_PORT, "*", dnsTarget);
-
   unsigned long startMs = millis();
-  while (portalRunning || staRunning) {
-    dnsServer.processNextRequest();
-    webServer.handleClient();
+  unsigned long lastStatusMs = 0;
+  while (serverStarted) {
+    if (dnsRunning) dnsServer.processNextRequest();
+    if (millis() - lastStatusMs > 1000) {
+      lastStatusMs = millis();
+      // Only read/build status when someone is actually connected, so the
+      // Modbus bus isn't loaded by an empty panel.
+      if (ws.count() > 0) {
+        ws.textAll(buildLocalStatusJSON());
+        ws.cleanupClients();
+      }
+    }
     // Boot-time safety timeout so the device never sits in AP forever.
     // cfg-driven AP (user asked for it) has no timeout.
-    if (serveModeAp && portalTimeout && millis() - startMs > 10UL * 60UL * 1000UL) {
+    if (serveModeAp && portalRunning && portalTimeout && millis() - startMs > 10UL * 60UL * 1000UL) {
       Serial.println("[WEB] Provisioning timeout, shutting down");
-      break;
+      stopCaptivePortal();
     }
     vTaskDelay(20 / portTICK_PERIOD_MS);
   }
-
-  webServer.stop();
-  dnsServer.stop();
-  if (serveModeAp) {
-    WiFi.softAPdisconnect(true);
-  }
-  portalRunning = false;
-  staRunning = false;
-  Serial.println("[WEB] Server stopped");
-  webTaskActive = false;
   vTaskDelete(NULL);
 }
 
+static void ensureWebServer() {
+  if (serverStarted) return;
+  registerRoutes();
+  asyncServer.begin();
+  serverStarted = true;
+  xTaskCreate(webTask, "web", 8192, NULL, 1, NULL);
+  Serial.println("[WEB] Async server started");
+}
+
+// ---- AP / portal ------------------------------------------------------------
+
 void startCaptivePortal() {
-  if (portalRunning || staRunning) return;
+  if (portalRunning) return;
   portalTimeout = true;
   startApPortal();
 }
 
 void startApPortal() {
-  if (portalRunning || staRunning) return;
-  // Make sure a previous web task (STA local server) fully exited before we
-  // touch the shared WebServer instance again.
-  unsigned long waitMs = millis();
-  while (webTaskActive && millis() - waitMs < 2000) vTaskDelay(20 / portTICK_PERIOD_MS);
-  if (webTaskActive) {
-    Serial.println("[WEB] Old server task did not exit, aborting AP start");
-    return;
-  }
+  if (portalRunning) return;
   serveModeAp = true;
   portalRunning = true;
 
@@ -293,13 +234,18 @@ void startApPortal() {
     return;
   }
   Serial.printf("[WEB] AP '%s' up, IP %s\n", PORTAL_AP_SSID, WiFi.softAPIP().toString().c_str());
-  Serial.printf("[WEB] deviceId=%s pairCode=%s\n", mqttDeviceId().c_str(), mqttGetPairCode().c_str());
+  Serial.printf("[WEB] deviceId=%s\n", mqttDeviceId().c_str());
 
-  xTaskCreate(webTask, "web", 8192, NULL, 1, NULL);
+  dnsServer.start(DNS_PORT, "*", IPAddress(192, 168, 4, 1));
+  dnsRunning = true;
+  ensureWebServer();
 }
 
 void stopCaptivePortal() {
   portalRunning = false;
+  dnsRunning = false;
+  dnsServer.stop();
+  WiFi.softAPdisconnect(true);
 }
 
 bool captivePortalActive() {
@@ -314,7 +260,7 @@ bool captivePortalActive() {
 // "no pending command". We latch the active mode ourselves; 0 is ignored.
 // Exits: reboot (RAM latch resets), or the local panel ("/api/mode" button).
 
-static int activeWifiMode = 0; // 0=normal, 1=touch/pairing, 2=ap
+static int activeWifiMode = 0; // 0=normal, 1=touch, 2=ap
 int localWifiMode() { return activeWifiMode; }
 void resetWifiModeLatch() {
   activeWifiMode = 0;
@@ -349,43 +295,36 @@ void checkWifiConfigMode() {
   if (cfg == 2 && activeWifiMode != 2) {
     // AP mode requested from the block: local AP panel only, MQTT never runs.
     activeWifiMode = 2;
-    stopLocalServer();
-    mqttCancelRepair();
+    portalTimeout = false; // user-driven, no safety timeout
     mqttStop();
     startApPortal();
   } else if (cfg == 1 && activeWifiMode != 1) {
-    // Touch pairing: leave AP if active, then break the old server binding and
-    // request a fresh pair code (shown on the PSU screen immediately).
+    // Touch: kept for the block; without a server it has no pairing action.
+    // MQTT follows the enable flag (loop() handles start/stop).
     activeWifiMode = 1;
     if (captivePortalActive()) {
       stopCaptivePortal();
       WiFi.mode(WIFI_STA);
       connectToSavedNetworks();
     }
-    mqttRequestRepair();
-    mqttStart();
   }
   // cfg == 0: "no pending command" — keep whatever mode we latched.
 }
 
+// ---- STA local server -------------------------------------------------------
+
 void startLocalServer() {
-  if (portalRunning || staRunning) return;
-  unsigned long waitMs = millis();
-  while (webTaskActive && millis() - waitMs < 2000) vTaskDelay(20 / portTICK_PERIOD_MS);
-  if (webTaskActive) {
-    Serial.println("[WEB] Old server task did not exit, aborting STA start");
-    return;
-  }
+  if (captivePortalActive()) return; // AP is already serving
   serveModeAp = false;
-  staRunning = true;
-  Serial.printf("[WEB] Local server on %s\n", WiFi.localIP().toString().c_str());
-  xTaskCreate(webTask, "web", 8192, NULL, 1, NULL);
+  bool wasStarted = serverStarted;
+  ensureWebServer();
+  if (!wasStarted) Serial.printf("[WEB] Local server on %s\n", WiFi.localIP().toString().c_str());
 }
 
 void stopLocalServer() {
-  staRunning = false;
+  // The async server is shared and keeps running; nothing to stop.
 }
 
 bool localServerActive() {
-  return staRunning;
+  return serverStarted;
 }

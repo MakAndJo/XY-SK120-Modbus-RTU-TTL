@@ -8,12 +8,13 @@
 #define MQTT_NAMESPACE "mqttc"
 #define MQTT_HOST_KEY "host"
 #define MQTT_PORT_KEY "port"
+#define MQTT_USER_KEY "user"
+#define MQTT_PASS_KEY "pass"
 #define MQTT_NAME_KEY "name"
-#define MQTT_PAIR_KEY "pcode"
-#define MQTT_BOUND_KEY "bound"
+#define MQTT_ENABLE_KEY "enable"
 
-// Compile-time default broker. Used when nothing is saved in NVS yet, so the
-// device connects right after flashing. Override with serial 'mqtt set ...'.
+// Compile-time default broker. Used when nothing is saved in NVS yet.
+// Override with serial 'mqtt set ...' or the local panel.
 #define MQTT_DEFAULT_HOST   "192.168.0.200"
 #define MQTT_DEFAULT_PORT   1883
 
@@ -24,37 +25,27 @@ String mqttDeviceId();
 bool mqttConfigLoaded();
 String mqttHost();
 uint16_t mqttPort();
+String mqttUser();
+String mqttPass();
 String mqttDeviceName();
 
-// Persist MQTT config (used by serial 'mqtt set' and the local web UI).
-// The broker is open (no user/password); only clientId xy-<deviceId> is used.
-void mqttSaveConfig(const String& host, uint16_t port);
+// Persist MQTT config (used by serial 'mqtt set' and the local panel).
+// Empty user/pass = anonymous connect.
+void mqttSaveConfig(const String& host, uint16_t port,
+                    const String& user, const String& pass);
 
-// Pair code shown on the PSU screen until the device is bound to a server
-// account. Stored in NVS so it survives reboots. Empty string = bound / no code.
-String mqttGetPairCode();
-void mqttSetPairCode(const String& code);
+// MQTT on/off switch (local panel / serial). The broker link only runs when
+// enabled AND a host is configured ("not available without at least an IP").
+void mqttSetEnabled(bool on);
+bool mqttEnabled();
 
-// Bound state derived from the pair code: a device with a code is unbound.
-// The server clears the code on bind and issues a fresh one on unbind.
-bool mqttGetBound();
-
-// Touch pairing requested from the block: generate a fresh pair code on the
-// device immediately (it starts showing in the PSU IP field right away) and
-// tell the server to drop the old binding and record the new code.
-void mqttRequestRepair();
-void mqttCancelRepair();
-
-// Wipe any stored pair code and mark the device as not bound (used at boot to
-// drop a stale code left over from an interrupted pairing session).
-void mqttClearCode();
-
-// Connection gate: only talk to the broker when bound, or when the user is
-// actively pairing (Touch on the block / button in the local panel). AP mode
-// (REG_WIFI_CONFIG=2) never enables MQTT.
+// Connection gate: AP mode (REG_WIFI_CONFIG=2) never enables MQTT; otherwise
+// only when the user enabled MQTT and a host is set.
 bool mqttShouldConnect();
-bool mqttPairingActive();
-void mqttSetPairing(bool active);
+
+// Start/stop the MQTT client background task. start() spawns a task that
+// connects, publishes retained info/status, subscribes to <device>/command and
+// publishes responses. stop() disconnects and halts the task.
 void mqttStart();
 void mqttStop();
 

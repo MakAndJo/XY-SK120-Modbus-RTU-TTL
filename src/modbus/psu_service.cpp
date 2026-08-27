@@ -157,24 +157,24 @@ bool readPSUStatusBatched(PSUStatusData& data) {
 static bool readPSUStatusBatchedLocked(PSUStatusData& data) {
   uint16_t buf[16];
   bool valid = true;
-  float liveVoltageSet = 0, liveCurrentSet = 0;
+  double liveVoltageSet = 0, liveCurrentSet = 0;
 
   // Batch 1: 0x0000 - 0x000E (15 contiguous): V_SET, I_SET, VOUT, IOUT, POWER,
   // UIN, AH_L, AH_H, WH_L, WH_H, OUT_H, OUT_M, OUT_S, T_IN, T_EX
   if (!powerSupply->readRegisters(REG_V_SET, 15, buf)) {
     valid = false;
   } else {
-    liveVoltageSet = buf[0] / 100.0f;
-    liveCurrentSet = buf[1] / 1000.0f;
-    data.voltage = buf[2] / 100.0f;
-    data.current = buf[3] / 1000.0f;
-    data.power = buf[4] / 100.0f;
-    data.inputVoltage = buf[5] / 100.0f;
-    data.ampHours = ((uint32_t)buf[6] | ((uint32_t)buf[7] << 16)) * 0.001f;
-    data.wattHours = ((uint32_t)buf[8] | ((uint32_t)buf[9] << 16)) * 0.001f;
+    liveVoltageSet = buf[0] / 100.0;
+    liveCurrentSet = buf[1] / 1000.0;
+    data.voltage = buf[2] / 100.0;
+    data.current = buf[3] / 1000.0;
+    data.power = buf[4] / 100.0;
+    data.inputVoltage = buf[5] / 100.0;
+    data.ampHours = ((uint32_t)buf[6] | ((uint32_t)buf[7] << 16)) * 0.001;
+    data.wattHours = ((uint32_t)buf[8] | ((uint32_t)buf[9] << 16)) * 0.001;
     data.outputTime = buf[10] * 3600u + buf[11] * 60u + buf[12];
-    data.internalTemp = buf[13] / 10.0f;
-    data.externalTemp = buf[14] / 10.0f;
+    data.internalTemp = buf[13] / 10.0;
+    data.externalTemp = buf[14] / 10.0;
   }
 
   // Batch 2: LOCK(0x000F), PROTECT(0x0010), CVCC(0x0011), ONOFF(0x0012)
@@ -220,10 +220,10 @@ static bool readPSUStatusBatchedLocked(PSUStatusData& data) {
     valid = false;
   } else {
     data.mpptEnabled = (buf[0] != 0);
-    data.mpptThreshold = buf[1] / 100.0f;
-    data.batteryCutoff = buf[2] / 1000.0f;
+    data.mpptThreshold = buf[1] / 100.0;
+    data.batteryCutoff = buf[2] / 1000.0;
     data.cpModeEnabled = (buf[3] != 0);
-    data.powerSet = buf[4] / 10.0f;
+    data.powerSet = buf[4] / 10.0;
   }
 
   // Batch 7: 0x0050 - 0x005E (15 contiguous): CV_SET, CC_SET, S_LVP, S_OVP,
@@ -232,21 +232,21 @@ static bool readPSUStatusBatchedLocked(PSUStatusData& data) {
   if (!powerSupply->readRegisters(REG_CV_SET, 15, buf)) {
     valid = false;
   } else {
-    data.voltageSet = buf[0] / 100.0f;
-    data.currentSet = buf[1] / 1000.0f;
-    data.lvp = buf[2] / 100.0f;
-    data.ovp = buf[3] / 100.0f;
-    data.ocp = buf[4] / 1000.0f;
-    data.opp = buf[5] / 10.0f;
+    data.voltageSet = buf[0] / 100.0;
+    data.currentSet = buf[1] / 1000.0;
+    data.lvp = buf[2] / 100.0;
+    data.ovp = buf[3] / 100.0;
+    data.ocp = buf[4] / 1000.0;
+    data.opp = buf[5] / 10.0;
     data.ohpHours = buf[6];
     data.ohpMinutes = buf[7];
     uint32_t oah = (uint32_t)buf[8] | ((uint32_t)buf[9] << 16);
-    data.overAmpHours = oah / 1000.0f;
+    data.overAmpHours = oah / 1000.0;
     uint32_t owh = (uint32_t)buf[10] | ((uint32_t)buf[11] << 16);
-    data.overWattHours = owh * 0.01f;
-    data.otp = buf[12] / 10.0f;
+    data.overWattHours = owh * 0.01;
+    data.otp = buf[12] / 10.0;
     data.outputOnAtStartup = (buf[13] & 0x0001) != 0;
-    data.etp = buf[14] / 10.0f;
+    data.etp = buf[14] / 10.0;
     // Working setpoints always win - they reflect the active group recall
     data.voltageSet = liveVoltageSet;
     data.currentSet = liveCurrentSet;
@@ -258,9 +258,9 @@ static bool readPSUStatusBatchedLocked(PSUStatusData& data) {
     valid = false;
   } else {
     data.bchEnabled = (buf[0] != 0);
-    data.bchThreshold = buf[1] / 100.0f;
+    data.bchThreshold = buf[1] / 100.0;
     data.btfEnabled = (buf[2] != 0);
-    data.btfCutoff = buf[3] / 1000.0f;
+    data.btfCutoff = buf[3] / 1000.0;
     data.clofEnabled = (buf[4] != 0);
   }
 
@@ -336,7 +336,7 @@ String buildStatusJSON(const PSUStatusData& data) {
   doc["overWattHours"] = data.overWattHours;
 
   const char* modeCode;
-  float setValue;
+  double setValue;
   switch (data.operatingMode) {
     case MODE_CV:
       modeCode = "CV";
@@ -380,18 +380,6 @@ String buildStatusJSON(const PSUStatusData& data) {
   String response;
   serializeJson(doc, response);
   return response;
-}
-
-// An 8-digit pair code is shown as a valid IPv4 on the PSU screen:
-// "12345678" -> 18.52.86.104 (each pair of digits becomes one octet).
-static uint32_t ipv4FromPairCode(const String& code) {
-  uint32_t ip = 0;
-  for (int i = 0; i < 8 && i + 1 < (int)code.length(); i += 2) {
-    char hi = code[i], lo = code[i + 1];
-    if (!isdigit(hi) || !isdigit(lo)) return 0;
-    ip = (ip << 8) | (uint8_t)((hi - '0') * 10 + (lo - '0'));
-  }
-  return ip;
 }
 
 // Last REG_WIFI_CONFIG value read from the block (0=None, 1=Touch, 2=AP).
@@ -442,14 +430,7 @@ void wifiModuleKeepAlive() {
     status = 4; // SERVER / module present
   }
 
-  // Alternating pair code / real IP only for the physical block's WiFi menu.
-  // Never in AP mode (the AP shows its own provisioning IP).
   uint32_t ipToWrite = ipv4;
-  String pair = mqttGetPairCode();
-  if (connected && mode != 2 && pair.length() == 8 && (millis() / 1000) & 1) {
-    ipToWrite = ipv4FromPairCode(pair);
-  }
-
   uint16_t master = 0x3B3A;
   uint16_t tail[3] = { status,
                        (uint16_t)((ipToWrite >> 16) & 0xFFFF),
@@ -484,9 +465,8 @@ String buildLocalStatusJSON() {
   bool connected = (WiFi.status() == WL_CONNECTED);
   DynamicJsonDocument doc(4096);
   deserializeJson(doc, buildStatusJSON(data));
-  // The PSU register alternates between the real IP and the pair code (for the
-  // physical block's WiFi menu). The local UI must show the real IP only — the
-  // code is exposed explicitly via "pairCode" below, no blinking here.
+  // The local UI must show the real IP only (the block's register always holds
+  // the real IP — no pair code alternation anymore).
   uint32_t realIp = 0;
   if (connected) {
     IPAddress wifi = WiFi.localIP();
@@ -495,10 +475,10 @@ String buildLocalStatusJSON() {
   }
   doc["ipv4"] = realIp;
   doc["deviceId"] = mqttDeviceId();
-  doc["bound"] = mqttGetBound();
-  doc["pairCode"] = mqttGetPairCode();
   doc["mqttHost"] = mqttHost();
   doc["mqttPort"] = mqttPort();
+  doc["mqttUser"] = mqttUser();
+  doc["mqttEnabled"] = mqttEnabled();
   doc["mqttConnected"] = mqttConnected();
   doc["ssid"] = connected ? WiFi.SSID() : "";
   doc["ip"] = WiFi.localIP().toString();
@@ -711,21 +691,21 @@ static String handleDeviceSetting(String action, DynamicJsonDocument& doc) {
     responseDoc["group"] = group;
     responseDoc["success"] = ok;
     if (ok) {
-      responseDoc["voltageSet"] = buf[0] / 100.0f;
-      responseDoc["currentSet"] = buf[1] / 1000.0f;
-      responseDoc["lvp"] = buf[2] / 100.0f;
-      responseDoc["ovp"] = buf[3] / 100.0f;
-      responseDoc["ocp"] = buf[4] / 1000.0f;
-      responseDoc["opp"] = buf[5] / 10.0f;
+      responseDoc["voltageSet"] = buf[0] / 100.0;
+      responseDoc["currentSet"] = buf[1] / 1000.0;
+      responseDoc["lvp"] = buf[2] / 100.0;
+      responseDoc["ovp"] = buf[3] / 100.0;
+      responseDoc["ocp"] = buf[4] / 1000.0;
+      responseDoc["opp"] = buf[5] / 10.0;
       responseDoc["ohpHours"] = buf[6];
       responseDoc["ohpMinutes"] = buf[7];
       uint32_t oah = (uint32_t)buf[8] | ((uint32_t)buf[9] << 16);
-      responseDoc["overAmpHours"] = oah / 1000.0f;
+      responseDoc["overAmpHours"] = oah / 1000.0;
       uint32_t owh = (uint32_t)buf[10] | ((uint32_t)buf[11] << 16);
-      responseDoc["overWattHours"] = owh * 0.01f;
-      responseDoc["otp"] = buf[12] / 10.0f;
+      responseDoc["overWattHours"] = owh * 0.01;
+      responseDoc["otp"] = buf[12] / 10.0;
       responseDoc["outputOnAtStartup"] = (buf[13] & 0x0001) != 0;
-      responseDoc["etp"] = buf[14] / 10.0f;
+      responseDoc["etp"] = buf[14] / 10.0;
     }
     String response;
     serializeJson(responseDoc, response);
@@ -804,33 +784,6 @@ String handleMqttAction(const String& action, const char* payload) {
   if (action == "ping") {
     return "{\"action\":\"pong\"}";
   }
-  if (action == "setPairCode") {
-    // Server-driven. A non-empty 8-digit code means the device is (still)
-    // unbound / re-pairing: show it and keep the broker link up. An empty code
-    // means bound: hide the code, commit the binding and put REG_WIFI_CONFIG
-    // back to None so the block returns to normal operation.
-    String code = doc["code"] | "";
-    code.trim();
-    String digits = "";
-    for (size_t i = 0; i < code.length(); i++) {
-      if (isdigit(code[i])) digits += code[i];
-    }
-    if (digits.length() != 8) digits = "";
-    mqttSetPairCode(digits);
-    if (digits.length() == 0) {
-      mqttCancelRepair();
-      if (powerSupply) {
-        lockModbus();
-        powerSupply->writeRegister(REG_WIFI_CONFIG, 0);
-        unlockModbus();
-      }
-      Serial.println("[PSU] bound: REG_WIFI_CONFIG -> 0 (None)");
-    } else {
-      mqttSetPairing(true);
-    }
-    Serial.printf("[PSU] setPairCode: '%s'\n", digits.c_str());
-    return String("{\"action\":\"setPairCodeResponse\",\"success\":true,\"code\":\"") + digits + "\"}";
-  }
   if (action == "setMqttConfig") {
     String host = doc["host"] | "";
     host.trim();
@@ -838,7 +791,9 @@ String handleMqttAction(const String& action, const char* payload) {
       return "{\"action\":\"setMqttConfigResponse\",\"success\":false,\"error\":\"Empty host\"}";
     }
     uint16_t port = (uint16_t)(doc["port"] | 1883);
-    mqttSaveConfig(host, port);
+    String user = doc["user"] | "";
+    String pass = doc["pass"] | "";
+    mqttSaveConfig(host, port, user, pass);
     return "{\"action\":\"setMqttConfigResponse\",\"success\":true}";
   }
   if (action == "restart") {
@@ -1056,7 +1011,7 @@ String handleMqttAction(const String& action, const char* payload) {
 
     OperatingMode mode = powerSupply->getOperatingMode(true);
     String modeCode, modeName;
-    float setValue = 0.0;
+    double setValue = 0.0;
 
     switch (mode) {
       case MODE_CV:

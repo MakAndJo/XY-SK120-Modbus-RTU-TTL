@@ -1,10 +1,6 @@
 const $ = (id) => document.getElementById(id);
 const fmt = (v, d = 2) => (isNaN(v) ? "--" : Number(v).toFixed(d));
 
-// ---- Mode: 'local' (device-served) or 'server' (broker client) ----
-let mode = 'server';
-let token = localStorage.getItem('xypsu_token') || '';
-
 // ---- WiFi module (host 0x0030-0x0034) formatters ----
 function formatHostType(v) {
   if (v == null || v === 0) return "отсутствует";
@@ -37,182 +33,7 @@ function formatIpv4(v) {
   return [((v >>> 24) & 255), ((v >>> 16) & 255), ((v >>> 8) & 255), (v & 255)].join(".");
 }
 
-// ---- Devices: server mode lists the account's bound blocks ----
-const CURRENT_KEY = "xypsu_current";
-let devices = []; // [{ deviceId, name, model, online }]
-let onlineState = {}; // deviceId -> true/false
-let boundDeviceId = "";
-
-function deviceName(deviceId) {
-  const d = devices.find((x) => x.deviceId === deviceId);
-  return d ? d.name : deviceId;
-}
-
-function upsertDevice(deviceId, name, model) {
-  const d = devices.find((x) => x.deviceId === deviceId);
-  if (d) { d.name = name || d.name; d.model = model || d.model; }
-  else devices.push({ deviceId, name: name || deviceId, model: model || "XY-SK150S" });
-}
-
-function renderDeviceSelect() {
-  const sel = $("deviceSelect");
-  if (sel) {
-    sel.innerHTML = "";
-    if (mode === "local") {
-      sel.style.display = "none";
-    } else {
-      sel.style.display = "";
-      if (!devices.length) {
-        const opt = document.createElement("option");
-        opt.value = "";
-        opt.textContent = "— нет устройств —";
-        sel.appendChild(opt);
-      }
-      devices.forEach((d) => {
-        const opt = document.createElement("option");
-        opt.value = d.deviceId;
-        opt.textContent = `${d.name} (${d.deviceId})`;
-        if (d.deviceId === boundDeviceId) opt.selected = true;
-        sel.appendChild(opt);
-      });
-    }
-  }
-  $("deviceName").textContent = boundDeviceId ? deviceName(boundDeviceId) : "XY PSU";
-  renderServersList();
-}
-
-function renderServersList() {
-  const tbody = $("serversList");
-  if (!tbody) return;
-  tbody.innerHTML = "";
-  if (mode === "local") {
-    const tr = document.createElement("tr");
-    const td = document.createElement("td");
-    td.colSpan = 2;
-    td.style.color = "var(--muted)";
-    td.textContent = "Этот блок управляется напрямую (без сервера).";
-    tr.appendChild(td);
-    tbody.appendChild(tr);
-    return;
-  }
-  if (!devices.length) {
-    const tr = document.createElement("tr");
-    const td = document.createElement("td");
-    td.colSpan = 2;
-    td.style.color = "var(--muted)";
-    td.textContent = "Нет привязанных устройств. Введите 8-значный код с экрана блока.";
-    tr.appendChild(td);
-    tbody.appendChild(tr);
-    return;
-  }
-  devices.forEach((d) => {
-    const tr = document.createElement("tr");
-    const label = document.createElement("td");
-    label.className = "server-name";
-    const name = document.createElement("span");
-    name.textContent = d.name;
-    if (d.deviceId === boundDeviceId) name.classList.add("current");
-    const dev = document.createElement("span");
-    dev.className = "server-ip";
-    dev.textContent = d.deviceId + (onlineState[d.deviceId] === false ? " · offline" : onlineState[d.deviceId] === true ? " · online" : "");
-    label.appendChild(name);
-    label.appendChild(dev);
-    label.addEventListener("click", () => switchDevice(d.deviceId));
-    tr.appendChild(label);
-    const ctrl = document.createElement("td");
-    ctrl.className = "ctrl";
-    const renameBtn = document.createElement("button");
-    renameBtn.className = "btn btn-sm btn-ghost";
-    renameBtn.textContent = "Переим.";
-    renameBtn.addEventListener("click", () => renameDevice(d.deviceId));
-    const delBtn = document.createElement("button");
-    delBtn.className = "btn btn-sm btn-danger";
-    delBtn.textContent = "Удалить";
-    delBtn.addEventListener("click", () => {
-      if (confirm(`Отвязать устройство ${d.name} (${d.deviceId})?`)) removeDevice(d.deviceId);
-    });
-    ctrl.appendChild(renameBtn);
-    ctrl.appendChild(delBtn);
-    tr.appendChild(ctrl);
-    tbody.appendChild(tr);
-  });
-}
-
-function switchDevice(deviceId) {
-  if (!deviceId || deviceId === boundDeviceId) return;
-  if (boundDeviceId && ws && ws.readyState === WebSocket.OPEN) {
-    send({ type: "unsubscribe", deviceId: boundDeviceId });
-  }
-  boundDeviceId = deviceId;
-  try { localStorage.setItem(CURRENT_KEY, deviceId); } catch {}
-  resetUi();
-  renderDeviceSelect();
-  renderConn();
-  toast(`Устройство ${deviceName(deviceId)}`);
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    send({ type: "subscribe", deviceId });
-    afterBind();
-  }
-}
-
-async function addDevice(code) {
-  const k = String(code || "").replace(/\D/g, "");
-  if (k.length !== 8) { toast("Введите 8-значный код"); return; }
-  const r = await api("/api/bind", { method: "POST", body: JSON.stringify({ code: k }) });
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok) { toast(j.error || "Ошибка привязки"); return; }
-  upsertDevice(j.deviceId, j.name, j.model);
-  boundDeviceId = j.deviceId;
-  try { localStorage.setItem(CURRENT_KEY, j.deviceId); } catch {}
-  $("deviceName").textContent = j.name || deviceName(j.deviceId);
-  $("newCode").value = "";
-  renderDeviceSelect();
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    send({ type: "subscribe", deviceId: j.deviceId });
-    afterBind();
-  }
-  renderConn();
-  toast(`Привязано: ${j.deviceId}`);
-}
-
-async function renameDevice(deviceId) {
-  const cur = deviceName(deviceId);
-  const name = prompt("Новое имя устройства:", cur);
-  if (name == null) return;
-  const trimmed = name.trim();
-  if (!trimmed) return;
-  const r = await api(`/api/devices/${deviceId}/rename`, { method: "POST", body: JSON.stringify({ name: trimmed }) });
-  if (!r.ok) { toast("Ошибка переименования"); return; }
-  upsertDevice(deviceId, trimmed);
-  renderDeviceSelect();
-}
-
-async function removeDevice(deviceId) {
-  const wasCurrent = deviceId === boundDeviceId;
-  const r = await api(`/api/devices/${deviceId}`, { method: "DELETE" });
-  if (!r.ok) { toast("Ошибка отвязки"); return; }
-  devices = devices.filter((d) => d.deviceId !== deviceId);
-  onlineState[deviceId] = false;
-  if (!devices.length) {
-    boundDeviceId = "";
-    try { localStorage.removeItem(CURRENT_KEY); } catch {}
-    resetUi();
-    renderDeviceSelect();
-    if (ws && ws.readyState === WebSocket.OPEN) send({ type: "unsubscribe", deviceId });
-    return;
-  }
-  if (wasCurrent) switchDevice(devices[0].deviceId);
-  else renderDeviceSelect();
-}
-
-// ---- REST helper (server mode) ----
-async function api(path, opts = {}) {
-  const headers = { "Content-Type": "application/json", ...(opts.headers || {}) };
-  if (token) headers["Authorization"] = "Bearer " + token;
-  return fetch(path, { ...opts, headers });
-}
-
-// Clear all live values so nothing from the previous device is shown
+// Clear all live values
 function resetUi() {
   protArmed = false;
   outputOn = false;
@@ -236,57 +57,40 @@ function resetUi() {
   if (btn) { btn.textContent = "ВКЛ"; btn.className = "btn btn-success"; }
 }
 
-// ---- Transport: WebSocket (server) OR direct HTTP (local) ----
+// ---- Transport: WebSocket to the device (/ws) ----
 let ws = null;
 let connected = false;
+let reconnectTimer = null;
 
 function connect() {
-  if (mode !== "server") return;
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
   const proto = location.protocol === "https:" ? "wss" : "ws";
-  if (ws) { ws.onclose = null; try { ws.close(); } catch {} }
-  ws = new WebSocket(`${proto}://${location.host}/ws?token=${encodeURIComponent(token)}`);
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
   ws.onopen = () => {
     connected = true;
-    setConn(false);
-    if (boundDeviceId) {
-      $("deviceName").textContent = deviceName(boundDeviceId);
-      send({ type: "subscribe", deviceId: boundDeviceId });
-      afterBind();
-    }
+    renderConn();
+    afterBind();
   };
   ws.onclose = () => {
     connected = false;
-    setConn(true);
-    setTimeout(connect, 1000);
+    renderConn();
+    scheduleReconnect();
   };
-  ws.onerror = () => ws.close();
-  ws.onmessage = (e) => handleMessage(e.data);
+  ws.onerror = () => { try { ws.close(); } catch {} };
+  ws.onmessage = (e) => {
+    let d;
+    try { d = JSON.parse(e.data); } catch { return; }
+    feedDeviceResponse(d);
+  };
 }
-
-// Protocol frame ({type,...}) or a device command ({action,...})
+function scheduleReconnect() {
+  if (reconnectTimer) return;
+  reconnectTimer = setTimeout(() => { reconnectTimer = null; connect(); }, 1500);
+}
+// Send a device command ({action, ...}) over the WebSocket
 function send(obj) {
-  if (mode === "local") {
-    localCmd(obj);
-    return;
-  }
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  if (obj && obj.type) { ws.send(JSON.stringify(obj)); return; }
-  if (!boundDeviceId) return;
-  ws.send(JSON.stringify({ type: "command", deviceId: boundDeviceId, payload: obj }));
-}
-
-// Local mode: the device itself answers commands over HTTP.
-async function localCmd(obj) {
-  try {
-    const r = await fetch("/api/cmd", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(obj),
-    });
-    if (!r.ok) return;
-    const resp = await r.json();
-    feedDeviceResponse(resp);
-  } catch {}
+  ws.send(JSON.stringify(obj));
 }
 
 function afterBind() {
@@ -301,26 +105,14 @@ function loadTimeZones() {
   send({ action: "getTimeZone" });
 }
 
-function setConn(offline) {
-  connected = !offline;
-  renderConn();
-}
-
-// Header indicator reflects the bound device, not the WS transport
 function renderConn() {
   const dot = $("conn");
   const txt = $("connText");
-  let on = false, off = false, unknown = false, label = "--";
-  if (!connected) { off = true; label = "offline"; }
-  else if (boundDeviceId && onlineState[boundDeviceId] === true) { on = true; label = "online"; }
-  else if (boundDeviceId && onlineState[boundDeviceId] === false) { off = true; label = "offline"; }
-  else if (boundDeviceId) { unknown = true; label = "..."; }
   if (dot) {
-    dot.classList.toggle("dot-on", on);
-    dot.classList.toggle("dot-off", off);
-    dot.classList.toggle("dot-unknown", unknown);
+    dot.classList.toggle("dot-on", connected);
+    dot.classList.toggle("dot-off", !connected);
   }
-  txt.textContent = label;
+  txt.textContent = connected ? "online" : "offline";
 }
 
 function fmtTime(sec) {
@@ -360,7 +152,6 @@ let homePendingGroup = null;
 function cacheMemGroup(d) {
   if (!d || d.group == null) return;
   memProfiles[d.group] = { v: d.voltageSet, i: d.currentSet };
-  // Home selector only: the protection tab shows the values in the V-set/I-set fields below
   const sel = document.querySelector("#page-main .memgroup-sel");
   if (!sel) return;
   [...sel.options].forEach((opt) => {
@@ -375,14 +166,13 @@ function loadAllMemGroups() {
   batchMemLoading = true;
   batchMemPending = 10;
   for (let g = 0; g <= 9; g++) send({ action: "getMemoryGroup", group: g });
-  // Safety: never block other replies longer than a few seconds regardless of responses
   setTimeout(() => { batchMemLoading = false; }, 3000);
 }
-// One of the settings inputs was edited; when true the polled status stops overwriting them
 let configDirty = false;
-// Last server values of the settings inputs, used to send only what really changed
 let lastConfig = {};
 let lastTzIndex = 0;
+// MQTT inputs are being edited; status push must not overwrite them
+let mqttDirty = false;
 
 function configInputsDirty() {
   configDirty = true;
@@ -390,7 +180,6 @@ function configInputsDirty() {
 
 function renderStatus(s) {
   if (!s) return;
-  // Output toggle shows the CURRENT state (state, not action)
   outputOn = !!(s.outputEnabled);
   const on = outputOn;
   $("voltage").textContent = fmt(s.voltage) + "V";
@@ -414,7 +203,6 @@ function renderStatus(s) {
     md.className = (m === "CV") ? "cv" : (m === "CC") ? "cc" : (m === "CP" ? "cp" : "");
   }
 
-  // Protection status is shown in the 4th slot; on/off button becomes "Сброс"
   protArmed = !isNaN(code) && code > 0;
   const btn = $("outBtn");
   if (protArmed) {
@@ -425,12 +213,10 @@ function renderStatus(s) {
     btn.className = "btn " + (on ? "btn-success" : "btn-danger");
   }
 
-  // Energy & temperatures
   $("ampHours").textContent = `${fmt(s.ampHours, 3)} Ah`;
   $("wattHours").textContent = `${fmt(s.wattHours, 3)} Wh`;
   $("outputTime").textContent = fmtTime(s.outputTime);
   $("inputVoltage").textContent = `${fmt(s.inputVoltage)} V`;
-  // Both the live big display and the energy table share temperature values
   const tIn = `${fmt(s.internalTemp, 1)} ${s.tempCelsius ? "°C" : "°F"}`;
   const tEx = `${fmt(s.externalTemp, 1)} ${s.tempCelsius ? "°C" : "°F"}`;
   if ($("internalTemp")) $("internalTemp").textContent = tIn;
@@ -438,7 +224,6 @@ function renderStatus(s) {
   if ($("externalTemp")) $("externalTemp").textContent = tEx;
   document.querySelectorAll(".energy-temp-ex").forEach((el) => el.textContent = tEx);
 
-  // Protection inputs (skipped while a profile is previewed in the protection card)
   if (viewingGroup == null) {
     if (editable("pOvp")) $("pOvp").value = fmt(s.ovp);
     if (editable("pOcp")) $("pOcp").value = fmt(s.ocp, 3);
@@ -454,7 +239,6 @@ function renderStatus(s) {
     if (editable("pSetI")) $("pSetI").value = fmt(s.currentSet, 3);
   }
 
-  // Settings inputs (skipped while the user is editing them)
   if (editable("cBacklight")) $("cBacklight").value = s.backlight != null ? s.backlight : "";
   if (editable("cSleep")) $("cSleep").value = s.sleepTimeout != null ? s.sleepTimeout : "";
   if (editable("cSlave")) $("cSlave").value = s.slaveAddress != null ? s.slaveAddress : "";
@@ -478,46 +262,20 @@ function renderStatus(s) {
   if (s.ipv4 != null && s.ipv4 > 0) $("wifiIpPsu").textContent = formatIpv4(s.ipv4);
   else $("wifiIpPsu").textContent = "--";
 
-  // Server (MQTT) card (local mode fills it via /api/status)
+  // MQTT card
   if (s.mqttHost != null) $("mqttHost").textContent = s.mqttHost;
   if (s.mqttPort != null) $("mqttPort").textContent = s.mqttPort;
+  if (s.mqttUser != null) $("mqttUser").textContent = s.mqttUser || "—";
   if (s.mqttConnected != null) $("mqttState").textContent = s.mqttConnected ? "подключён" : "не подключён";
-
-  // Connection code, shown explicitly in the Server card (local mode).
-  if (mode === "local" && s.bound != null) {
-    const pc = $("mqttPairCode");
-    if (pc) {
-      if (s.bound) pc.textContent = "привязан";
-      else if (s.pairCode) pc.textContent = s.pairCode;
-      else pc.textContent = "--";
-    }
-    const pb = $("pairBtn");
-    if (pb) {
-      if (s.bound) { pb.textContent = "Подключено"; pb.disabled = true; }
-      else if (s.pairCode) { pb.textContent = "Отключить сопряжение"; pb.disabled = false; }
-      else { pb.textContent = "Сопряжение с сервером"; pb.disabled = false; }
-    }
-    const em = $("exitModeBtn");
-    if (em) em.classList.toggle("hidden", !(s.mode === 2));
+  // Inputs: don't clobber what the user is typing (dirty until a successful save)
+  if (!mqttDirty) {
+    if (editable("mqttNewHost")) $("mqttNewHost").value = s.mqttHost || "";
+    if (editable("mqttNewPort")) $("mqttNewPort").value = s.mqttPort || 1883;
+    if (editable("mqttNewUser")) $("mqttNewUser").value = s.mqttUser || "";
+    if (editable("mqttEnable")) $("mqttEnable").checked = !!s.mqttEnabled;
   }
-
-  // Pair code card (local mode: show the code until the block is bound)
-  if (s.bound != null && mode === "local") {
-    const card = $("pairCard");
-    const codeEl = $("pairCode");
-    const hint = $("pairHint");
-    if (card) {
-      if (s.bound) {
-        card.classList.add("hidden");
-      } else {
-        card.classList.remove("hidden");
-        if (codeEl) codeEl.textContent = s.pairCode || "--";
-        if (hint) hint.textContent = s.pairCode
-          ? "Введите этот код в приложении XY PSU → Устройства → Добавить"
-          : "Блок ещё не получил код — подождите или проверьте адрес сервера.";
-      }
-    }
-  }
+  const em = $("exitModeBtn");
+  if (em) em.classList.toggle("hidden", !(s.mode === 2));
 
   if (!configDirty) {
     lastConfig = {
@@ -540,13 +298,10 @@ function renderStatus(s) {
   }
   document.querySelectorAll(".memgroup-sel").forEach((el) => {
     if (el === document.activeElement) return;
-    // While a home recall is in flight, keep the user's selection until the PSU confirms
     if (homePendingGroup != null && !el.id) return;
-    // While previewing a profile in the protection card, keep its selector on the chosen group
     if (viewingGroup != null && el.id === "protMemGroup") return;
     el.value = s.memoryGroup != null ? String(s.memoryGroup) : "0";
   });
-  // The device confirmed the recalled group; the selector may follow it again
   if (homePendingGroup != null && s.memoryGroup != null && Number(s.memoryGroup) === homePendingGroup) {
     homePendingGroup = null;
   }
@@ -557,7 +312,6 @@ function renderStatus(s) {
   keyLockBtn.title = s.keyLockEnabled ? "Снять блокировку" : "Заблокировать";
 
   const cpMode = !!s.cpModeEnabled;
-  // CP mode: show the power setpoint, hide the current setpoint (and vice versa)
   $("pCol").classList.toggle("hidden", !cpMode);
   $("iCol").classList.toggle("hidden", cpMode);
 
@@ -565,8 +319,6 @@ function renderStatus(s) {
   if (editable("iIn")) $("iIn").value = fmt(s.currentSet, 3);
   if (editable("pIn")) $("pIn").value = s.powerSet != null ? fmt(s.powerSet, 1) : "";
 
-  // Live setpoints go to the current memory group's chip store as well, so keep the
-  // home selector label in sync when V/I-set change
   const gNow = s.memoryGroup != null ? Number(s.memoryGroup) : -1;
   if (gNow >= 0 && !isNaN(s.voltageSet) && !isNaN(s.currentSet)) {
     const c = memProfiles[gNow];
@@ -614,7 +366,6 @@ function profileInputsDirty() {
   profileDirty = true;
 }
 
-// Send only the profile fields that really changed
 function saveProfile() {
   if (viewingGroup == null) { toast("Сначала выберите профиль"); return; }
   const p = lastProfile;
@@ -656,63 +407,24 @@ function switchTab(tab) {
   document.querySelectorAll("#tabbar button").forEach((b) => {
     b.classList.toggle("active", b.dataset.page === tab);
   });
-  // Keep the selected tab in the URL so a reload stays on it
   if (location.hash !== "#" + tab) {
     try { history.replaceState(null, "", "#" + tab); } catch {}
   }
 }
-
-// Restore the tab from the URL hash on load
 function initTab() {
   const tab = (location.hash || "").replace(/^#\//, "").replace(/^#/, "") || "main";
-  if (!["main", "prot", "cfg", "devices"].includes(tab)) tab = "main";
+  if (!["main", "prot", "cfg"].includes(tab)) tab = "main";
   switchTab(tab);
 }
 window.addEventListener("hashchange", initTab);
 
-// ---- Message handling ----
-function handleMessage(raw) {
-  let msg;
-  try { msg = JSON.parse(raw); } catch { return; }
-
-  // New WS gateway frames: status / info / online / response / error
-  switch (msg.type) {
-    case "status":
-      // Never paint live-looking values for a block we know is offline: the
-      // frame can only be stale (late arrival, cached replay, etc).
-      if (boundDeviceId && msg.deviceId === boundDeviceId && onlineState[msg.deviceId] === false) return;
-      if (boundDeviceId && msg.deviceId === boundDeviceId) renderStatus(msg.data || msg);
-      return;
-    case "info":
-      if (msg.data) {
-        if (msg.data.deviceId === boundDeviceId && msg.data.name) {
-          upsertDevice(msg.data.deviceId, msg.data.name, msg.data.model);
-          $("deviceName").textContent = msg.data.name;
-        }
-        renderServersList();
-      }
-      return;
-    case "online":
-      if (msg.deviceId) onlineState[msg.deviceId] = msg.online;
-      renderServersList();
-      renderConn();
-      return;
-    case "error":
-      toast(msg.message || "Ошибка сервера");
-      return;
-    default:
-      // response frames carry {action, ...} in msg.data
-      if (msg.data) { feedDeviceResponse(msg.data); return; }
-      msg = msg.data || msg;
-  }
-}
-
-// Device action response (from WS "response" frames or local /api/cmd)
+// ---- Device action responses (WS: status + command replies) ----
 function feedDeviceResponse(d) {
   if (!d) return;
   switch (d.action) {
     case "statusResponse":
       renderStatus(d);
+      renderWifi({ ssid: d.ssid, ip: d.ip, rssi: d.rssi });
       break;
     case "timeZoneData":
       fillTimeZones(d);
@@ -761,14 +473,13 @@ function feedDeviceResponse(d) {
       toast(d.success ? `Профиль M${d.group} сохранён` : "Ошибка сохранения профиля");
       if (d.success) {
         const g = d.group != null ? d.group : viewingGroup;
-        if (g != null) send({ action: "getMemoryGroup", group: g }); // refresh the selector label
+        if (g != null) send({ action: "getMemoryGroup", group: g });
       }
       break;
     case "setMqttConfigResponse":
-      toast(d.success ? "Настройки сервера сохранены" : "Ошибка сохранения сервера");
+      toast(d.success ? "Настройки MQTT сохранены" : "Ошибка сохранения MQTT");
       break;
   }
-  // Toast failures from device-setting responses
   if (d.action && d.action.endsWith("Response") && d.success === false && d.error) {
     toast(d.error);
   }
@@ -824,7 +535,6 @@ function setPower() {
   send({ action: "setPower", power: p });
 }
 
-// Step the voltage/current/power setpoint by a fixed delta and apply it
 function stepSetpoint(which, delta, decimals) {
   const input = $(which);
   const cur = parseFloat(input.value);
@@ -853,13 +563,22 @@ function addNetwork() {
 
 async function saveMqtt() {
   const host = $("mqttNewHost").value.trim();
-  if (!host) { toast("Введите адрес сервера"); return; }
+  if (!host) { toast("Введите адрес брокера (IP или hostname)"); return; }
   const port = parseInt($("mqttNewPort").value) || 1883;
-  if (mode === "local") {
-    send({ action: "setMqttConfig", host, port });
+  const user = $("mqttNewUser").value.trim();
+  const pass = $("mqttNewPass").value;
+  const enable = $("mqttEnable").checked;
+  const r = await fetch("/api/mqtt", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ host, port, user, pass, enable }),
+  }).then((x) => x.json()).catch(() => ({}));
+  if (r.success) {
+    mqttDirty = false;
+    toast(enable ? "MQTT включён" : "MQTT выключен");
+    if (enable) send({ action: "getData" });
   } else {
-    toast("Адрес сервера задаётся на самом блоке (локальный интерфейс)");
-    return;
+    toast(r.error || "Ошибка сохранения MQTT");
   }
 }
 
@@ -927,136 +646,12 @@ function cancelConfig() {
   send({ action: "getData" });
 }
 
-// ---- Auth (server mode) ----
-function showLogin(msg) {
-  $("loginOverlay").classList.remove("hidden");
-  if (msg) $("loginMsg").textContent = msg;
-}
-function hideLogin() {
-  $("loginOverlay").classList.add("hidden");
-}
-
-async function doAuth(register) {
-  const login = $("loginUser").value.trim();
-  const password = $("loginPass").value;
-  if (login.length < 3 || password.length < 4) {
-    $("loginMsg").textContent = "Логин ≥3, пароль ≥4";
-    return;
-  }
-  const r = await api(`/api/${register ? "register" : "login"}`, {
-    method: "POST",
-    body: JSON.stringify({ login, password }),
-  });
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok) { $("loginMsg").textContent = j.error || "Ошибка"; return; }
-  token = j.token;
-  try { localStorage.setItem("xypsu_token", token); } catch {}
-  $("loginMsg").textContent = "";
-  $("loginPass").value = "";
-  hideLogin();
-  await loadServerDevices();
-  connect();
-}
-
-async function loadServerDevices() {
-  const r = await api("/api/devices");
-  if (r.status === 401) { token = ""; try { localStorage.removeItem("xypsu_token"); } catch {} showLogin(); return; }
-  const j = await r.json().catch(() => ({ devices: [] }));
-  devices = j.devices || [];
-  onlineState = {};
-  devices.forEach((d) => { onlineState[d.deviceId] = d.online; });
-  if (!devices.some((d) => d.deviceId === boundDeviceId)) {
-    boundDeviceId = devices.length ? devices[0].deviceId : "";
-    if (boundDeviceId) try { localStorage.setItem(CURRENT_KEY, boundDeviceId); } catch {}
-  }
-  renderDeviceSelect();
-  renderConn();
-}
-
-function doLogout() {
-  api("/api/logout", { method: "POST" }).catch(() => {});
-  token = "";
-  try { localStorage.removeItem("xypsu_token"); } catch {}
-  if (ws) { ws.onclose = null; try { ws.close(); } catch {} ws = null; }
-  devices = [];
-  boundDeviceId = "";
-  resetUi();
-  renderDeviceSelect();
-  setConn(true);
-  showLogin("");
-}
-
-// ---- Local mode: the device serves this UI and answers directly ----
-let localPollTimer = null;
-
-async function pollLocalStatus() {
-  try {
-    const r = await fetch("/api/status", { cache: "no-store" });
-    if (!r.ok) { throw new Error("bad"); }
-    const s = await r.json();
-    if (!boundDeviceId && s.deviceId) {
-      boundDeviceId = s.deviceId;
-      onlineState[s.deviceId] = true;
-      renderDeviceSelect();
-      connected = true;
-      setConn(false);
-      afterBind();
-    }
-    if (boundDeviceId) {
-      onlineState[boundDeviceId] = true;
-      renderStatus(s);
-      renderWifi({ ssid: s.ssid, ip: s.ip, rssi: s.rssi });
-    }
-    renderConn();
-  } catch {
-    if (boundDeviceId) onlineState[boundDeviceId] = false;
-    connected = false;
-    renderConn();
-  }
-}
-
-function startLocalMode() {
-  mode = "local";
-  $("deviceSelect").style.display = "none";
-  $("logoutBtn").classList.add("hidden");
-  $("mqttCard").classList.remove("hidden");
-  // Devices tab is server-only
-  document.querySelector('#tabbar button[data-page="devices"]').classList.add("hidden");
-  initTab();
-  pollLocalStatus();
-  localPollTimer = setInterval(pollLocalStatus, 1000);
-}
-
 // ---- Boot ----
-document.addEventListener("DOMContentLoaded", async () => {
+document.addEventListener("DOMContentLoaded", () => {
   initTab();
-
-  // Detect transport: /api/status only exists on the device itself.
-  try {
-    const probe = await fetch("/api/status", { cache: "no-store" });
-    if (probe.ok) {
-      const st = await probe.json();
-      if (st && st.deviceId) {
-        startLocalMode();
-        wireEvents();
-        return;
-      }
-    }
-  } catch {}
-
-  // Server mode
-  mode = "server";
-  $("logoutBtn").classList.remove("hidden");
-  document.querySelector('#tabbar button[data-page="devices"]').classList.remove("hidden");
-  $("mqttCard").classList.add("hidden"); // broker address is set on the device itself
-  if (token) {
-    await loadServerDevices();
-    if (token) connect();
-    else wireEvents();
-  } else {
-    showLogin("");
-  }
+  resetUi();
   wireEvents();
+  connect();
 });
 
 function wireEvents() {
@@ -1065,15 +660,10 @@ function wireEvents() {
   $("wifiAddBtn").addEventListener("click", addNetwork);
   $("wifiRefresh").addEventListener("click", loadWifiStatus);
   $("mqttSaveBtn").addEventListener("click", saveMqtt);
-  $("pairBtn").addEventListener("click", async () => {
-    const cur = await fetch("/api/pair").then((r) => r.json()).catch(() => ({}));
-    const active = !(cur.pairing || cur.bound);
-    const r = await fetch("/api/pair", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ active }),
-    }).then((x) => x.json()).catch(() => ({}));
-    toast(r.pairing ? "Сопряжение включено" : "Сопряжение выключено");
+  ["mqttNewHost", "mqttNewPort", "mqttNewUser", "mqttNewPass", "mqttEnable"].forEach((id) => {
+    const el = $(id);
+    if (!el) return;
+    el.addEventListener(el.type === "checkbox" ? "change" : "input", () => { mqttDirty = true; });
   });
   $("exitModeBtn").addEventListener("click", async () => {
     const r = await fetch("/api/mode", {
@@ -1090,7 +680,6 @@ function wireEvents() {
     if (confirm("Перезапустить ESP32?")) send({ action: "restart" });
   });
 
-  // Settings form: mark dirty on any edit, Save/Cancel like the protection card
   ["cBacklight", "cSleep", "cSlave", "cBaud", "cTempUnit", "cBeeper", "cMppt", "cMpptThr", "cCpMode", "cBtf", "cBch", "cBchThr", "cBtfEn", "cBtfCut", "cClof", "cTz"].forEach((id) => {
     const el = $(id);
     if (!el) return;
@@ -1099,33 +688,14 @@ function wireEvents() {
   $("cfgSaveBtn").addEventListener("click", saveConfig);
   $("cfgCancelBtn").addEventListener("click", cancelConfig);
 
-  // Tabs
   document.querySelectorAll("#tabbar button").forEach((btn) => {
     btn.addEventListener("click", () => switchTab(btn.dataset.page));
   });
 
-  // Multi-instance controls: switch bound device / add a new one by code
-  $("deviceSelect").addEventListener("change", (e) => switchDevice(e.target.value));
-  $("addOk").addEventListener("click", () => {
-    addDevice($("newCode").value);
-    $("newCode").value = "";
-  });
-  const addKeyEnter = (e) => { if (e.key === "Enter") $("addOk").click(); };
-  $("newCode").addEventListener("keydown", addKeyEnter);
-
-  // Auth
-  $("loginBtn").addEventListener("click", () => doAuth(false));
-  $("registerBtn").addEventListener("click", () => doAuth(true));
-  $("loginPass").addEventListener("keydown", (e) => { if (e.key === "Enter") doAuth(false); });
-  $("logoutBtn").addEventListener("click", doLogout);
-
-  // All [data-action] "ok" buttons
   document.querySelectorAll(".btn[data-action]").forEach((btn) => {
     btn.addEventListener("click", () => applyRow(btn.dataset.action, btn));
   });
 
-  // Home card: selecting a memory group recalls it immediately; the poller stops
-  // overwriting the selector until the PSU confirms the new group in its status
   document.querySelectorAll("#page-main .memgroup-sel").forEach((sel) => {
     sel.addEventListener("change", () => {
       const g = parseInt(sel.value);
@@ -1134,7 +704,6 @@ function wireEvents() {
       send({ action: "setMemoryGroup", group: g });
     });
   });
-  // Protection card: profile preview + Save/Cancel/Recall
   $("protMemGroup").addEventListener("change", (e) => {
     const g = parseInt(e.target.value);
     if (isNaN(g)) return;
@@ -1151,7 +720,7 @@ function wireEvents() {
     viewingGroup = null;
     profileDirty = false;
     $("protMemGroup").value = String(g == null ? 0 : g);
-    send({ action: "getData" }); // restore live values
+    send({ action: "getData" });
   });
   $("protRecallBtn").addEventListener("click", () => {
     if (viewingGroup == null) { toast("Сначала выберите профиль"); return; }
@@ -1161,7 +730,6 @@ function wireEvents() {
   $("vIn").addEventListener("keydown", (e) => { if (e.key === "Enter") setVoltage(); });
   $("iIn").addEventListener("keydown", (e) => { if (e.key === "Enter") setCurrent(); });
 
-  // Step buttons for voltage/current with auto-repeat while held
   const addStepHandler = (id, target, delta, decimals) => {
     const el = $(id);
     let timer = null;

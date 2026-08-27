@@ -8,7 +8,6 @@
 static WiFiClient mqttWifiClient;
 static PubSubClient mqttClient(mqttWifiClient);
 static volatile bool mqttTaskRunning = false;
-static volatile bool mqttEnabled = false;
 static String mqttDeviceIdStr;
 
 // PubSubClient::setServer(const char*) stores a pointer, it does NOT copy the
@@ -60,6 +59,26 @@ uint16_t mqttPort() {
   return port;
 }
 
+String mqttUser() {
+  Preferences prefs;
+  String user = "";
+  if (prefs.begin(MQTT_NAMESPACE, true)) {
+    user = prefs.getString(MQTT_USER_KEY, "");
+    prefs.end();
+  }
+  return user;
+}
+
+String mqttPass() {
+  Preferences prefs;
+  String pass = "";
+  if (prefs.begin(MQTT_NAMESPACE, true)) {
+    pass = prefs.getString(MQTT_PASS_KEY, "");
+    prefs.end();
+  }
+  return pass;
+}
+
 String mqttDeviceName() {
   Preferences prefs;
   String name = "";
@@ -71,115 +90,50 @@ String mqttDeviceName() {
   return name;
 }
 
-void mqttSaveConfig(const String& host, uint16_t port) {
+void mqttSaveConfig(const String& host, uint16_t port,
+                    const String& user, const String& pass) {
   Preferences prefs;
   prefs.begin(MQTT_NAMESPACE, false);
   prefs.putString(MQTT_HOST_KEY, host);
   prefs.putUShort(MQTT_PORT_KEY, port);
+  prefs.putString(MQTT_USER_KEY, user);
+  prefs.putString(MQTT_PASS_KEY, pass);
   prefs.end();
-  Serial.printf("[MQTT] Config saved: %s:%d\n", host.c_str(), port);
+  Serial.printf("[MQTT] Config saved: %s:%d user='%s'\n",
+                host.c_str(), port, user.c_str());
 }
 
-String mqttGetPairCode() {
-  Preferences prefs;
-  String code = "";
-  if (prefs.begin(MQTT_NAMESPACE, true)) {
-    code = prefs.getString(MQTT_PAIR_KEY, "");
-    prefs.end();
-  }
-  return code;
-}
-
-void mqttSetPairCode(const String& code) {
+void mqttSetEnabled(bool on) {
   Preferences prefs;
   prefs.begin(MQTT_NAMESPACE, false);
-  prefs.putString(MQTT_PAIR_KEY, code);
-  // A device with a code is unbound; an empty code means "bound".
-  prefs.putChar(MQTT_BOUND_KEY, code.length() ? 0 : 1);
+  prefs.putChar(MQTT_ENABLE_KEY, on ? 1 : 0);
   prefs.end();
-  if (code.length()) Serial.printf("[MQTT] Pair code set: %s\n", code.c_str());
-  else Serial.println("[MQTT] Pair code cleared (bound)");
+  Serial.printf("[MQTT] %s\n", on ? "enabled" : "disabled");
 }
 
-bool mqttGetBound() {
+bool mqttEnabled() {
   Preferences prefs;
-  int8_t bound = 0;
+  int8_t on = 0;
   if (prefs.begin(MQTT_NAMESPACE, true)) {
-    bound = prefs.getChar(MQTT_BOUND_KEY, 0);
+    on = prefs.getChar(MQTT_ENABLE_KEY, 0);
     prefs.end();
   }
-  return bound == 1;
+  return on == 1;
 }
 
-// Touch pairing: a pending repair request that goes out once the device is
-// connected to the broker. Set by mqttRequestRepair(), cleared after publish.
-static volatile bool repairPending = false;
-// True while the user (or the server) has an active pairing intent. When false
-// and the device is not bound, no broker connection is made at all.
-static volatile bool pairingActive = false;
-
-bool mqttPairingActive() { return pairingActive; }
-
-// Connection gate: only talk to the broker when bound, or when the user is
-// actively pairing. AP mode (REG_WIFI_CONFIG=2) never enables MQTT.
+// Connection gate: AP mode (REG_WIFI_CONFIG=2) never enables MQTT; otherwise
+// only when the user enabled MQTT AND explicitly configured a broker host
+// (the compile-time default alone is not enough — "no IP = no connection").
 bool mqttShouldConnect() {
   if (getWifiConfigState() == 2) return false; // AP: local AP panel only
-  return mqttGetBound() || pairingActive;
-}
-
-// Mark active pairing without regenerating the code (used when the server
-// pushes a re-pair code for a bound device).
-void mqttSetPairing(bool active) {
-  pairingActive = active;
-}
-
-static void publishRepair() {
-  if (!mqttClient.connected()) return;
-  DynamicJsonDocument doc(64);
-  doc["code"] = mqttGetPairCode();
-  String json;
-  serializeJson(doc, json);
-  String topic = String("xysk/") + mqttDeviceId() + "/repair";
-  if (mqttClient.publish(topic.c_str(), json.c_str(), false)) {
-    Serial.printf("[MQTT] repair published: %s\n", json.c_str());
-    repairPending = false;
-  }
-}
-
-void mqttRequestRepair() {
-  // Generate a fresh code locally (digits 1-9, IPv4-friendly) so it shows on
-  // the PSU screen immediately, then sync it to the server over MQTT.
-  const char* digits = "123456789";
-  String code = "";
-  for (int i = 0; i < 8; i++) code += digits[esp_random() % 9];
-  mqttSetPairCode(code);
-  pairingActive = true;
-  repairPending = true;
-  Serial.printf("[MQTT] pairing active, new code %s\n", code.c_str());
-  publishRepair(); // no-op when disconnected; mqttTask retries
-}
-
-void mqttClearCode() {
-  pairingActive = false;
-  repairPending = false;
+  if (!mqttEnabled()) return false;
   Preferences prefs;
-  if (prefs.begin(MQTT_NAMESPACE, false)) {
-    prefs.putString(MQTT_PAIR_KEY, "");
-    prefs.putChar(MQTT_BOUND_KEY, 0);
+  String host = "";
+  if (prefs.begin(MQTT_NAMESPACE, true)) {
+    host = prefs.getString(MQTT_HOST_KEY, "");
     prefs.end();
   }
-  Serial.println("[MQTT] code cleared");
-}
-
-void mqttCancelRepair() {
-  if (!mqttGetBound()) {
-    // Abandoned pairing while never bound: wipe the stale code and intent so
-    // the screen stops blinking a code no one can use.
-    mqttClearCode();
-  } else {
-    pairingActive = false;
-    repairPending = false;
-  }
+  return host.length() > 0;
 }
 
 static void publishInfo() {
@@ -193,6 +147,125 @@ static void publishInfo() {
   String json;
   serializeJson(doc, json);
   mqttClient.publish(infoTopic.c_str(), json.c_str(), true);
+}
+
+// ---- Home Assistant MQTT discovery ------------------------------------------
+
+// Publish retained discovery configs so HASS auto-creates all entities for this
+// device. Each config points at the shared status/command topics; value and
+// command templates map the fields.
+
+static void addDiscDevice(DynamicJsonDocument& doc) {
+  JsonObject dev = doc.createNestedObject("device");
+  JsonArray ids = dev.createNestedArray("identifiers");
+  ids.add("xysk_" + mqttDeviceId());
+  dev["name"] = mqttDeviceName() + " (" + mqttDeviceId() + ")";
+  dev["model"] = "XY-SK150S";
+  dev["manufacturer"] = "XY";
+}
+
+static void pubDisc(const String& component, const String& key, DynamicJsonDocument& doc) {
+  String topic = String("homeassistant/") + component + "/xysk_" + mqttDeviceId() + "_" + key + "/config";
+  String payload;
+  serializeJson(doc, payload);
+  mqttClient.publish(topic.c_str(), payload.c_str(), true);
+}
+
+static void discSensor(const String& key, const String& name,
+                       const String& statusTopic, const char* tmpl,
+                       const char* unit, const char* devClass, const char* stateClass) {
+  DynamicJsonDocument doc(512);
+  doc["name"] = name;
+  doc["unique_id"] = "xysk_" + mqttDeviceId() + "_" + key;
+  doc["state_topic"] = statusTopic;
+  doc["value_template"] = tmpl;
+  if (unit && unit[0]) doc["unit_of_measurement"] = unit;
+  if (devClass && devClass[0]) doc["device_class"] = devClass;
+  if (stateClass && stateClass[0]) doc["state_class"] = stateClass;
+  addDiscDevice(doc);
+  pubDisc("sensor", key, doc);
+}
+
+static void discSwitch(const String& key, const String& name,
+                       const String& statusTopic, const String& commandTopic,
+                       const char* stateExpr, const char* onCmd, const char* offCmd) {
+  DynamicJsonDocument doc(512);
+  doc["name"] = name;
+  doc["unique_id"] = "xysk_" + mqttDeviceId() + "_" + key;
+  doc["state_topic"] = statusTopic;
+  doc["value_template"] = stateExpr;
+  doc["command_topic"] = commandTopic;
+  doc["payload_on"] = onCmd;
+  doc["payload_off"] = offCmd;
+  doc["state_on"] = "ON";
+  doc["state_off"] = "OFF";
+  addDiscDevice(doc);
+  pubDisc("switch", key, doc);
+}
+
+static void discNumber(const String& key, const String& name,
+                       const String& statusTopic, const String& commandTopic,
+                       const char* tmpl, const char* cmdTmpl,
+                       float min, float max, float step, const char* unit) {
+  DynamicJsonDocument doc(512);
+  doc["name"] = name;
+  doc["unique_id"] = "xysk_" + mqttDeviceId() + "_" + key;
+  doc["state_topic"] = statusTopic;
+  doc["value_template"] = tmpl;
+  doc["command_topic"] = commandTopic;
+  doc["command_template"] = cmdTmpl;
+  doc["min"] = min;
+  doc["max"] = max;
+  doc["step"] = step;
+  doc["mode"] = "box";
+  if (unit && unit[0]) doc["unit_of_measurement"] = unit;
+  addDiscDevice(doc);
+  pubDisc("number", key, doc);
+}
+
+static void publishDiscovery() {
+  String devId = mqttDeviceId();
+  String statusTopic = String("xysk/") + devId + "/status";
+  String commandTopic = String("xysk/") + devId + "/command";
+
+  // Sensors (history/graphs via state_class)
+  discSensor("voltage",        "PSU Voltage",        statusTopic, "{{ value_json.voltage }}",      "V",  "voltage", "measurement");
+  discSensor("current",        "PSU Current",        statusTopic, "{{ value_json.current }}",      "A",  "current", "measurement");
+  discSensor("power",          "PSU Power",          statusTopic, "{{ value_json.power }}",        "W",  "power",   "measurement");
+  discSensor("input_voltage",  "PSU Input Voltage",  statusTopic, "{{ value_json.inputVoltage }}", "V",  "voltage", "measurement");
+  discSensor("amp_hours",      "PSU Amp-hours",      statusTopic, "{{ value_json.ampHours }}",     "Ah", "", "total_increasing");
+  discSensor("watt_hours",     "PSU Watt-hours",     statusTopic, "{{ value_json.wattHours }}",    "Wh", "", "total_increasing");
+  discSensor("output_time",    "PSU Output Time",    statusTopic, "{{ value_json.outputTime }}",   "s",  "duration", "measurement");
+  discSensor("internal_temp",  "PSU Internal Temp",  statusTopic, "{{ value_json.internalTemp }}", "°C", "temperature", "measurement");
+  discSensor("external_temp",  "PSU External Temp",  statusTopic, "{{ value_json.externalTemp }}", "°C", "temperature", "measurement");
+  discSensor("mode",           "PSU Mode",           statusTopic, "{{ value_json.operatingMode }}", "", "", "");
+  discSensor("protection",     "PSU Protection",     statusTopic, "{{ value_json.protectionStatus }}", "", "", "");
+
+  // Switches
+  discSwitch("output", "PSU Output", statusTopic, commandTopic,
+             "{{ 'ON' if value_json.outputEnabled else 'OFF' }}",
+             "{\"action\":\"powerOutput\",\"enable\":true}",
+             "{\"action\":\"powerOutput\",\"enable\":false}");
+  discSwitch("keylock", "PSU Key Lock", statusTopic, commandTopic,
+             "{{ 'ON' if value_json.keyLockEnabled else 'OFF' }}",
+             "{\"action\":\"setKeyLock\",\"lock\":true}",
+             "{\"action\":\"setKeyLock\",\"lock\":false}");
+
+  // Numbers (setpoints)
+  discNumber("vset", "PSU Voltage Set", statusTopic, commandTopic,
+             "{{ value_json.voltageSet }}",
+             "{\"action\":\"setVoltage\",\"voltage\":{{ value }}}",
+             0, 150, 0.01, "V");
+  discNumber("iset", "PSU Current Set", statusTopic, commandTopic,
+             "{{ value_json.currentSet }}",
+             "{\"action\":\"setCurrent\",\"current\":{{ value }}}",
+             0, 65, 0.001, "A");
+  discNumber("pset", "PSU Power Set", statusTopic, commandTopic,
+             "{{ value_json.powerSet }}",
+             "{\"action\":\"setPower\",\"power\":{{ value }}}",
+             0, 150, 0.1, "W");
+
+  Serial.println("[MQTT] Discovery configs published");
 }
 
 static String mqttLastStatus = "";
@@ -256,13 +329,17 @@ static void mqttTask(void* param) {
       String clientId = String("xy-") + id;
       // Copy into a stable buffer: PubSubClient::setServer stores the pointer.
       strlcpy(mqttHostBuf, mqttHost().c_str(), sizeof(mqttHostBuf));
-      // Open broker: no user/password, only the clientId identifies the device.
       mqttClient.setServer(mqttHostBuf, mqttPort());
       mqttClient.setCallback(onMqttMessage);
       mqttClient.setBufferSize(2048);
       // Last-will: publish retained 0 to <device>/online if we drop off.
-      bool connOk = mqttClient.connect(clientId.c_str(),
-                                       onlineTopic.c_str(), 1, true, "0");
+      String user = mqttUser();
+      String pass = mqttPass();
+      bool connOk = user.length() > 0
+        ? mqttClient.connect(clientId.c_str(), user.c_str(), pass.c_str(),
+                             onlineTopic.c_str(), 1, true, "0")
+        : mqttClient.connect(clientId.c_str(),
+                             onlineTopic.c_str(), 1, true, "0");
       if (connOk) {
         Serial.printf("[MQTT] Connected to %s:%d\n", mqttHost().c_str(), mqttPort());
         mqttClient.publish(onlineTopic.c_str(), "1", true);
@@ -270,15 +347,13 @@ static void mqttTask(void* param) {
         mqttLastStatus = "";
 
         publishInfo();
+        publishDiscovery();
         mqttPublishStatus();
 
         String commandTopic = String(COMMAND_TOPIC_TPL);
         commandTopic.replace("%s", id);
         mqttClient.subscribe(commandTopic.c_str());
         Serial.printf("[MQTT] Subscribed to %s\n", commandTopic.c_str());
-
-        // A touch-pairing request pending from the block goes out now.
-        if (repairPending) publishRepair();
       } else {
         Serial.printf("[MQTT] Connect failed rc=%d\n", mqttClient.state());
         vTaskDelay(3000 / portTICK_PERIOD_MS);
@@ -300,27 +375,18 @@ static void mqttTask(void* param) {
 void mqttStart() {
   if (mqttTaskRunning) return;
   if (!mqttShouldConnect()) {
-    Serial.println("[MQTT] connect declined (not bound, not pairing)");
+    Serial.println("[MQTT] connect declined (disabled or no host)");
     return;
   }
-  if (!mqttConfigLoaded()) {
-    // First run: materialise the compile-time default into NVS so the namespace
-    // exists and the reconnect loop doesn't spam nvs_open NOT_FOUND 4x/cycle.
-    mqttSaveConfig(MQTT_DEFAULT_HOST, MQTT_DEFAULT_PORT);
-    Serial.printf("[MQTT] No config in NVS, using default host %s:%d\n",
-                  MQTT_DEFAULT_HOST, MQTT_DEFAULT_PORT);
-  }
   mqttTaskRunning = true;
-  mqttEnabled = true;
   xTaskCreate(mqttTask, "mqtt", 8192, NULL, 1, NULL);
   Serial.println("[MQTT] Client task started");
 }
 
 void mqttStop() {
   mqttTaskRunning = false;
-  mqttEnabled = false;
 }
 
 bool mqttConnected() {
-  return mqttEnabled && mqttClient.connected();
+  return mqttTaskRunning && mqttClient.connected();
 }

@@ -1,30 +1,34 @@
-# XY-SK120 / XY-SK150 Power Supply Control (MQTT Server)
+# XY-SK120 / XY-SK150 Power Supply Control (Local Panel + MQTT)
 ![Demo](docs/IMG_2010.jpeg)
 
 Control an XY-SK120 / XY-SK150(S) power supply (and compatible models) over Modbus RTU using a Seeed XIAO ESP32S3 or ESP32C3.
 
-The firmware no longer hosts a web UI. The device connects to an MQTT broker and is controlled from a separate **server + browser client** in this repository, while the serial monitor interface, RTC/weather sync and the register-debugging tools stay on the device.
+The firmware hosts its own **local panel** (served by the device over HTTP + WebSocket) and can optionally publish live status to any **MQTT broker** (e.g. the Home Assistant mosquitto add-on) for control and history graphs. No external server required.
 
 ## Architecture
 
 ```
-+----------------+   MQTT (TCP 1883)   +----------------+   WebSocket        +----------------+
-|  Firmware      | <-----------------> |   Server       | <----------------> |  Browser       |
-|  (ESP32)       |                     |   (aedes)      |   (WS /ws :8080)  |  client        |
-+----------------+                     +----------------+                    +----------------+
-                                          |  POST /api/bind  { key }
-                                          v
-                                     HTTP :8080 (UI + WS gateway)
++----------------+   HTTP :80 + WS /ws   +----------------+
+|  Firmware      | <--------------------> |  Browser       |
+|  (ESP32)       |    local panel         |  client        |
++----------------+                        +----------------+
+     |
+     | MQTT (TCP 1883, optional)
+     v
++----------------+
+|  MQTT broker   |  e.g. mosquitto in Home Assistant
+|  (external)    |
++----------------+
 ```
 
-- Device = MQTT client. Publishes identity + live status (retained), subscribes to commands, answers on a response topic. See [docs/MQTT_PROTOCOL.md](docs/MQTT_PROTOCOL.md).
-- Server = embedded MQTT broker (aedes) on TCP :1883 for devices, plus a WebSocket gateway at `/ws` on :8080 and a bind API. The browser never speaks MQTT and the server does not run a second MQTT client: the gateway **hooks into the in-process broker's publish stream** (`broker.on('publish')` / `broker.publish()`) and talks to the browser with plain JSON WebSocket frames (`bind`/`subscribe`/`command`). See `server/`.
-- Client = single-page UI (dashboards for output, protections, memory groups) in `client/`, served by the server. Uses only a native `WebSocket` — no MQTT library in the browser.
+- **Local panel** — the device serves the single-page UI over HTTP (`/`) and streams live status + accepts commands over **WebSocket** (`/ws`). Reachable on the LAN IP, or from the provisioning AP (`XY-SK150-Setup`, 192.168.4.1).
+- **MQTT (optional)** — when enabled in the panel and a broker host is set, the device connects to the broker, publishes retained `xysk/<deviceId>/status` (live values), `xysk/<deviceId>/online` (LWT) and `xysk/<deviceId>/info`, subscribes to `xysk/<deviceId>/command` and answers on `xysk/<deviceId>/response`. Empty username/password = anonymous connect.
+- **Home Assistant** — point an MQTT sensor/switch/number at those topics (see below) to get control + history graphs without any server.
 
 ## Features
 
-- **MQTT control** — output on/off, V/A/W set, CV/CC/CP, key lock, protections (OVP/OCP/OPP/OTP/LVP), memory groups, beeper, backlight, sleep, timezone, PSU reset
-- **Device bind** — each device has a `deviceId` (`dev_<last6 MAC>`); first boot shows a bind key (md5 of deviceId). Enter it in the client to bind the device to your user.
+- **Local control panel** — output on/off, V/A/W set, CV/CC/CP, key lock, protections (OVP/OCP/OPP/OTP/LVP), memory groups, beeper, backlight, sleep, timezone, PSU reset, WiFi + MQTT settings. Data flows over WebSocket (no HTTP polling).
+- **MQTT publish** — optional, toggleable in the panel; requires at least a broker IP. Supports username/password.
 - **RTC / weather sync** — every ~10 s the ESP32 pushes Unix time plus a 3-day Open-Meteo forecast into the PSU's screensaver (register block `0x0200–0x0214`, same frame the OEM XY-WFPOW module sends)
 - **Serial monitor control interface** — menus for basic control, measurement, protection, settings, memory groups, WiFi, MQTT and register debugging
 - **Register debugging** — scan/compare/sniff tools to discover undocumented registers (see below)
@@ -37,14 +41,82 @@ The firmware no longer hosts a web UI. The device connects to an MQTT broker and
   - XIAO TX pin → XY-SK120 RX pin
   - XIAO RX pin → XY-SK120 TX pin
   - XIAO GND → XY-SK120 GND
-- First boot opens a provisioning AP (`XY-SK150-Setup`, http://192.168.4.1) where you enter your WiFi credentials; the page also shows the device bind key. Holding the WiFi reset pin (D0 on ESP32S3, GPIO9 on ESP32C3) to ground for 3 s resets the WiFi settings.
+- First boot opens a provisioning AP (`XY-SK150-Setup`, http://192.168.4.1) where you enter your WiFi credentials; the same panel is then served on the LAN IP. Holding the WiFi reset pin (D0 on ESP32S3, GPIO9 on ESP32C3) to ground for 3 s resets the WiFi settings.
 
 ## First run
 
 1. Build & flash the firmware over USB once (see [Building](#building)).
-2. Connect to the `XY-SK150-Setup` AP, open http://192.168.4.1, enter WiFi credentials, note the bind key.
-3. Start the server: `cd server && npm install && npm start`.
-4. Open http://localhost:8080, enter the bind key → device bound and controllable.
+2. Connect to the `XY-SK150-Setup` AP (or use the LAN IP), open the panel.
+3. Open **Настройки → MQTT**, enter the broker IP/port (optionally login/password), tick «Подключаться к брокеру», save.
+
+## Home Assistant integration
+
+The device publishes everything under `xysk/<deviceId>/...` (`deviceId` = `dev_<last6 MAC>`, shown in the panel). Add an MQTT broker in HASS pointing at your mosquitto.
+
+**Auto-discovery (recommended):** on every broker connect the device publishes
+Home Assistant MQTT discovery configs under `homeassistant/*/xysk_<deviceId>_*/config`
+(sensors for voltage/current/power/energy/temps/mode, switches for the output and
+key lock, numbers for V-set/I-set/P-set). All entities group under one device —
+no YAML needed.
+
+Manual YAML (only if you disable/ignore discovery), e.g.:
+
+```yaml
+mqtt:
+  sensor:
+    - name: "PSU Voltage"
+      state_topic: "xysk/dev_18C150/status"
+      value_template: "{{ value_json.voltage }}"
+      unit_of_measurement: "V"
+      device_class: voltage
+      state_class: measurement
+    - name: "PSU Current"
+      state_topic: "xysk/dev_18C150/status"
+      value_template: "{{ value_json.current }}"
+      unit_of_measurement: "A"
+      device_class: current
+      state_class: measurement
+    - name: "PSU Power"
+      state_topic: "xysk/dev_18C150/status"
+      value_template: "{{ value_json.power }}"
+      unit_of_measurement: "W"
+      device_class: power
+      state_class: measurement
+    - name: "PSU Amp-hours"
+      state_topic: "xysk/dev_18C150/status"
+      value_template: "{{ value_json.ampHours }}"
+      unit_of_measurement: "Ah"
+      state_class: total_increasing
+    - name: "PSU Watt-hours"
+      state_topic: "xysk/dev_18C150/status"
+      value_template: "{{ value_json.wattHours }}"
+      unit_of_measurement: "Wh"
+      state_class: total_increasing
+  switch:
+    - name: "PSU Output"
+      state_topic: "xysk/dev_18C150/status"
+      value_template: "{{ value_json.outputEnabled | bool }}"
+      command_topic: "xysk/dev_18C150/command"
+      payload_on: '{"action":"powerOutput","enable":true}'
+      payload_off: '{"action":"powerOutput","enable":false}'
+  number:
+    - name: "PSU V-set"
+      command_topic: "xysk/dev_18C150/command"
+      command_template: '{"action":"setVoltage","voltage":{{ value }}}'
+      min: 0
+      max: 150
+      step: 0.01
+      unit_of_measurement: "V"
+    - name: "PSU I-set"
+      command_topic: "xysk/dev_18C150/command"
+      command_template: '{"action":"setCurrent","current":{{ value }}}'
+      min: 0
+      max: 65
+      step: 0.001
+      unit_of_measurement: "A"
+```
+
+`state_class: measurement` / `total_increasing` is what makes HASS record history and draw graphs.
 
 ## RTC & Weather Sync
 
@@ -54,7 +126,7 @@ The firmware no longer hosts a web UI. The device connects to an MQTT broker and
 
 ## Serial Monitor Commands
 
-Enter the menu number (`1`–`7`) or type a command. Top-level commands: `status`, `prot`, `config`, `info`, `mqtt get`, `mqtt set <host> [port] [user] [pass] [name]`, `mqtt start`, `mqtt stop`, `help`.
+Enter the menu number (`1`–`7`) or type a command. Top-level commands: `status`, `prot`, `config`, `info`, `mqtt get`, `mqtt set <host> [port] [user] [pass]`, `mqtt on`, `mqtt off`, `keepalive on/off`, `help`.
 
 ### 1. Basic Control
 
@@ -108,8 +180,8 @@ Holding registers (function 0x03), partial list:
 | 0x0003  | Output current | A | /1000 | R |
 | 0x0004  | Output power | W | /100 | R |
 | 0x0005  | Input voltage | V | /100 | R |
-| 0x0006–0x0007 | Amp-hours (low/high) | Ah | ×0.01 | R |
-| 0x0008–0x0009 | Watt-hours (low/high) | Wh | ×0.01 | R |
+| 0x0006–0x0007 | Amp-hours (low/high) | Ah | ×0.001 | R |
+| 0x0008–0x0009 | Watt-hours (low/high) | Wh | ×0.001 | R |
 | 0x000A–0x000C | Output time (h/m/s) | s | – | R |
 | 0x000D–0x000E | Internal / external temp | °C/°F | /10 | R |
 | 0x000F  | Key lock | 0/1 | – | R/W |
@@ -156,34 +228,19 @@ pio run -t custom_showsize   # firmware size breakdown
 pio run -t custom_showpart   # partition table info
 ```
 
-## Running the server + client
-
-```
-cd server
-npm install
-npm start
-```
-
-- Broker (devices): `mqtt://<host>:1883`
-- Client UI + WebSocket gateway: `http://<host>:8080` (gateway at `/ws`)
-- Bind API: `POST http://<host>:8080/api/bind`
-
-The HTTP port can be overridden with `HTTP_PORT`, the broker port with `MQTT_PORT`. Device → broker connection settings are configured on the device via serial (`mqtt set <host> [port] [user] [pass] [name]`) or NVS.
-
 ## Project Layout
 
 - `src/main.cpp` — boot, WiFi, provisioning AP, background tasks (WiFi host keep-alive, weather fetch, RTC/weather sync), MQTT + OTA start
 - `src/modbus/psu_service.*` — Modbus mutex, batched status reads, status JSON, command dispatch (`handleMqttAction`)
 - `src/modbus/` — RTC/weather sync (`rtc_weather.*`) and Open-Meteo client (`weather_api.*`)
 - `src/mqtt/` — MQTT client (config, connect, LWT, retained info/status, command subscription)
-- `src/wifi_interface/` — native WiFi (connect to saved networks by priority), captive provisioning portal, credentials storage (`wifi_settings.*`)
+- `src/wifi_interface/` — native WiFi (connect to saved networks by priority), local web server + WebSocket (`captive_portal.*`), credentials storage (`wifi_settings.*`)
 - `src/serial_interface/` — serial menu system
 - `src/config/` — NVS configuration (Preferences-based)
 - `src/log_utils/` — logging, NTP, time zones
 - `lib/XY-SKxxx/` — XY-SKxxx Modbus register library
-- `server/` — Node.js MQTT broker + WebSocket gateway + bind API
-- `client/` — single-page browser UI (native WebSocket, no MQTT lib)
-- `docs/MQTT_PROTOCOL.md` — the device<->server<->client wire contract
+- `client/` — single-page browser UI (WebSocket, no HTTP polling) embedded into the firmware
+- `scripts/embed_client.py` — compresses `client/*` into `src/webui/embedded_client.h` on every build
 
 ## License
 
