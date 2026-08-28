@@ -81,6 +81,21 @@
         </div>
       </section>
 
+      <section class="card" id="graphCard">
+        <h2>График</h2>
+        <canvas id="graphCanvas"></canvas>
+        <div class="row wrap" id="graphLegend"></div>
+        <div class="row wrap graph-toggles">
+          <label><input type="checkbox" class="graph-series" data-key="v" checked> V</label>
+          <label><input type="checkbox" class="graph-series" data-key="i" checked> I</label>
+          <label><input type="checkbox" class="graph-series" data-key="p" checked> P</label>
+          <label><input type="checkbox" class="graph-series" data-key="ah"> Ah</label>
+          <label><input type="checkbox" class="graph-series" data-key="wh"> Wh</label>
+          <label><input type="checkbox" class="graph-series" data-key="tp"> T°</label>
+          <button id="graphResetBtn" class="btn btn-sm btn-ghost" style="margin-left:auto">Сбросить</button>
+        </div>
+      </section>
+
       <section class="card" id="energyCard">
         <h2>Энергия и температура</h2>
         <table>

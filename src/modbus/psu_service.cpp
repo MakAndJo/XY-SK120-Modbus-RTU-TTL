@@ -5,6 +5,7 @@
 #include "wifi_interface/wifi_settings.h"
 #include "wifi_interface/captive_portal.h"
 #include "mqtt/mqtt_manager.h"
+#include "graph_log.h"
 
 // Declared in main.cpp
 extern XY_SKxxx* powerSupply;
@@ -783,6 +784,13 @@ String handleMqttAction(const String& action, const char* payload) {
 
   if (action == "ping") {
     return "{\"action\":\"pong\"}";
+  }
+  if (action == "getGraph") {
+    return graphLogJSON();
+  }
+  if (action == "resetGraph") {
+    graphLogReset();
+    return "{\"action\":\"resetGraphResponse\",\"success\":true}";
   }
   if (action == "setMqttConfig") {
     String host = doc["host"] | "";

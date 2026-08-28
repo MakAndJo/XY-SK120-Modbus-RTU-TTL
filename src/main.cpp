@@ -4,6 +4,7 @@
 #include "modbus/modbus_handler.h"
 #include "modbus/rtc_weather.h"
 #include "modbus/psu_service.h"
+#include "modbus/graph_log.h"
 #include "config_manager.h"
 #include "XY-SKxxx.h"
 #include "XY-SKxxx_Config.h"
@@ -103,6 +104,9 @@ void setup() {
 
   // Initialize the Modbus bus mutex before any task can touch the bus
   initPsuService();
+
+  // Graph history: sample PSU state every 5 s into a RAM ring buffer.
+  graphLogStart();
 
   // Initialize Modbus RTU (attaches the global ModbusMaster to Serial1; the
   // real baud/pins are applied by powerSupply->begin() below)

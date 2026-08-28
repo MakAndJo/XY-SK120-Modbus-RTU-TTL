@@ -28,6 +28,7 @@ The firmware hosts its own **local panel** (served by the device over HTTP + Web
 ## Features
 
 - **Local control panel** — output on/off, V/A/W set, CV/CC/CP, key lock, protections (OVP/OCP/OPP/OTP/LVP), memory groups, beeper, backlight, sleep, timezone, PSU reset, WiFi + MQTT settings. Data flows over WebSocket (no HTTP polling).
+- **On-device graphs** — the main page draws a live chart of voltage/current/power (+ optional Ah/Wh/temperature) from a RAM ring buffer sampled every 5 s (~1 hour), reset manually from the panel. No external chart library, drawn on canvas.
 - **MQTT publish** — optional, toggleable in the panel; requires at least a broker IP. Supports username/password.
 - **RTC / weather sync** — every ~10 s the ESP32 pushes Unix time plus a 3-day Open-Meteo forecast into the PSU's screensaver (register block `0x0200–0x0214`, same frame the OEM XY-WFPOW module sends)
 - **Serial monitor control interface** — menus for basic control, measurement, protection, settings, memory groups, WiFi, MQTT and register debugging

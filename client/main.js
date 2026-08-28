@@ -98,6 +98,165 @@ function afterBind() {
   loadTimeZones();
   if (!memLoadedAll) { memLoadedAll = true; loadAllMemGroups(); }
   send({ action: "getData" });
+  send({ action: "getGraph" });
+}
+
+// ---- Graph (history from the device, drawn on canvas) ----
+const GRAPH_SERIES = {
+  v:  { label: "V",  color: "#4caf50", unit: "V",  dec: 2 },
+  i:  { label: "I",  color: "#2196f3", unit: "A",  dec: 3 },
+  p:  { label: "P",  color: "#ff9800", unit: "W",  dec: 2 },
+  ah: { label: "Ah", color: "#e91e63", unit: "Ah", dec: 3 },
+  wh: { label: "Wh", color: "#9c27b0", unit: "Wh", dec: 3 },
+  tp: { label: "T°", color: "#f44336", unit: "°C", dec: 1 },
+};
+let graphPoints = [];
+let graphHover = null;      // index of the hovered sample
+let graphHoverX = 0, graphHoverY = 0;
+
+function graphIndexAtPx(x) {
+  const pts = graphPoints;
+  if (!pts || !pts.length) return -1;
+  const cv = $("graphCanvas");
+  const W = cv.clientWidth || 300, padL = 6, padR = 6;
+  const t0 = pts[0].ts, t1 = pts[pts.length - 1].ts;
+  const tRange = Math.max(1, t1 - t0);
+  const plotW = W - padL - padR;
+  const ts = t0 + tRange * (x - padL) / plotW;
+  if (ts <= pts[0].ts) return 0;
+  if (ts >= pts[pts.length - 1].ts) return pts.length - 1;
+  let lo = 0, hi = pts.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (pts[mid].ts < ts) lo = mid + 1; else hi = mid;
+  }
+  if (lo > 0 && ts - pts[lo - 1].ts < pts[lo].ts - ts) return lo - 1;
+  return lo;
+}
+
+function drawGraph() {
+  const cv = $("graphCanvas");
+  if (!cv) return;
+  const ctx = cv.getContext("2d");
+  const dpr = window.devicePixelRatio || 1;
+  const W = cv.clientWidth || 300, H = cv.clientHeight || 220;
+  cv.width = W * dpr;
+  cv.height = H * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+
+  if (!graphPoints || !graphPoints.length) {
+    ctx.fillStyle = "#888";
+    ctx.font = "13px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("нет данных (запустите выход)", W / 2, H / 2);
+    return;
+  }
+  const pts = graphPoints;
+  const padL = 6, padR = 6, padT = 8, padB = 20;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const t0 = pts[0].ts, t1 = pts[pts.length - 1].ts;
+  const tRange = Math.max(1, t1 - t0);
+  const X = (ts) => padL + plotW * (ts - t0) / tRange;
+
+  // visible series
+  const visible = {};
+  document.querySelectorAll(".graph-series").forEach((cb) => {
+    if (cb.checked) visible[cb.dataset.key] = true;
+  });
+
+  // vertical time grid
+  ctx.strokeStyle = "rgba(128,128,128,0.25)";
+  ctx.fillStyle = "#888";
+  ctx.font = "10px sans-serif";
+  ctx.textAlign = "center";
+  const N = 5;
+  for (let i = 0; i <= N; i++) {
+    const x = padL + plotW * i / N;
+    ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, padT + plotH); ctx.stroke();
+    // minutes ago relative to the newest sample (right edge = now = 0)
+    const minsAgo = Math.round(tRange * (N - i) / N / 60);
+    ctx.fillText("-" + minsAgo + "м", x, H - 6);
+  }
+
+  // series (remember ranges for hover dots)
+  const ranges = {};
+  for (const key of Object.keys(GRAPH_SERIES)) {
+    if (!visible[key]) continue;
+    const s = GRAPH_SERIES[key];
+    let mn = Infinity, mx = -Infinity;
+    for (const p of pts) {
+      const v = p[key];
+      if (v < mn) mn = v;
+      if (v > mx) mx = v;
+    }
+    if (!isFinite(mn)) continue;
+    if (mx - mn < 1e-6) { mx = mn + 1; }
+    ranges[key] = { mn, mx };
+    ctx.strokeStyle = s.color;
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    pts.forEach((p, idx) => {
+      const y = padT + plotH * (1 - (p[key] - mn) / (mx - mn));
+      if (idx === 0) ctx.moveTo(X(p.ts), y);
+      else ctx.lineTo(X(p.ts), y);
+    });
+    ctx.stroke();
+  }
+
+  // legend: last value per visible series
+  const lg = $("graphLegend");
+  if (lg) {
+    lg.innerHTML = "";
+    const last = pts[pts.length - 1];
+    for (const key of Object.keys(GRAPH_SERIES)) {
+      if (!visible[key]) continue;
+      const s = GRAPH_SERIES[key];
+      const span = document.createElement("span");
+      span.style.color = s.color;
+      span.style.marginRight = "12px";
+      span.textContent = `${s.label} ${Number(last[key]).toFixed(s.dec)} ${s.unit}`;
+      lg.appendChild(span);
+    }
+  }
+
+  // hover overlay: crosshair + dots + tooltip
+  if (graphHover != null && pts[graphHover]) {
+    const p = pts[graphHover];
+    const cx = X(p.ts);
+    ctx.strokeStyle = "rgba(255,255,255,0.45)";
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.moveTo(cx, padT); ctx.lineTo(cx, padT + plotH); ctx.stroke();
+    ctx.setLineDash([]);
+    for (const key of Object.keys(GRAPH_SERIES)) {
+      if (!visible[key] || !ranges[key]) continue;
+      const { mn, mx } = ranges[key];
+      const y = padT + plotH * (1 - (p[key] - mn) / (mx - mn));
+      ctx.fillStyle = GRAPH_SERIES[key].color;
+      ctx.beginPath(); ctx.arc(cx, y, 3.2, 0, Math.PI * 2); ctx.fill();
+    }
+    const lines = [{ txt: "-" + Math.round((t1 - p.ts) / 60) + "м", color: "#fff" }];
+    for (const key of Object.keys(GRAPH_SERIES)) {
+      if (!visible[key]) continue;
+      const s = GRAPH_SERIES[key];
+      lines.push({ txt: `${s.label} ${Number(p[key]).toFixed(s.dec)} ${s.unit}`, color: s.color });
+    }
+    ctx.font = "11px sans-serif";
+    let bw = 0;
+    for (const l of lines) bw = Math.max(bw, ctx.measureText(l.txt).width);
+    const bh = lines.length * 14 + 8, bw2 = bw + 16;
+    let bx = graphHoverX + 12, by = graphHoverY - bh - 8;
+    if (bx + bw2 > W) bx = cx - bw2 - 12;
+    if (by < padT) by = graphHoverY + 12;
+    ctx.fillStyle = "rgba(20,20,20,0.92)";
+    ctx.strokeStyle = "rgba(255,255,255,0.3)";
+    ctx.beginPath(); ctx.rect(bx, by, bw2, bh); ctx.fill(); ctx.stroke();
+    ctx.textAlign = "left";
+    lines.forEach((l, i) => {
+      ctx.fillStyle = l.color;
+      ctx.fillText(l.txt, bx + 8, by + 16 + i * 14);
+    });
+  }
 }
 
 // ---- Rendering ----
@@ -479,6 +638,16 @@ function feedDeviceResponse(d) {
     case "setMqttConfigResponse":
       toast(d.success ? "Настройки MQTT сохранены" : "Ошибка сохранения MQTT");
       break;
+    case "graphData":
+      graphPoints = (d.points || []).map((p) => ({
+        ts: p.ts, v: p.v, i: p.i, p: p.p, ah: p.ah, wh: p.wh, tp: p.tp,
+      }));
+      drawGraph();
+      break;
+    case "resetGraphResponse":
+      graphPoints = [];
+      drawGraph();
+      break;
   }
   if (d.action && d.action.endsWith("Response") && d.success === false && d.error) {
     toast(d.error);
@@ -652,6 +821,9 @@ document.addEventListener("DOMContentLoaded", () => {
   resetUi();
   wireEvents();
   connect();
+  // Refresh the graph periodically so it ticks with the 5s sampling.
+  setInterval(() => { if (connected) send({ action: "getGraph" }); }, 15000);
+  window.addEventListener("resize", drawGraph);
 });
 
 function wireEvents() {
@@ -660,6 +832,40 @@ function wireEvents() {
   $("wifiAddBtn").addEventListener("click", addNetwork);
   $("wifiRefresh").addEventListener("click", loadWifiStatus);
   $("mqttSaveBtn").addEventListener("click", saveMqtt);
+  $("graphResetBtn").addEventListener("click", () => {
+    send({ action: "resetGraph" });
+  });
+  document.querySelectorAll(".graph-series").forEach((cb) => {
+    cb.addEventListener("change", drawGraph);
+  });
+  const gcv = $("graphCanvas");
+  if (gcv) {
+    const toLocal = (clientX, clientY) => {
+      const r = gcv.getBoundingClientRect();
+      return { x: clientX - r.left, y: clientY - r.top };
+    };
+    const move = (x, y) => {
+      graphHover = graphIndexAtPx(x);
+      graphHoverX = x;
+      graphHoverY = y;
+      drawGraph();
+    };
+    gcv.addEventListener("mousemove", (e) => move(e.offsetX, e.offsetY));
+    gcv.addEventListener("mouseleave", () => { graphHover = null; drawGraph(); });
+    gcv.addEventListener("touchstart", (e) => {
+      e.preventDefault();
+      const t = e.touches[0];
+      const p = toLocal(t.clientX, t.clientY);
+      move(p.x, p.y);
+    }, { passive: false });
+    gcv.addEventListener("touchmove", (e) => {
+      e.preventDefault();
+      const t = e.touches[0];
+      const p = toLocal(t.clientX, t.clientY);
+      move(p.x, p.y);
+    }, { passive: false });
+    gcv.addEventListener("touchend", () => { graphHover = null; drawGraph(); });
+  }
   ["mqttNewHost", "mqttNewPort", "mqttNewUser", "mqttNewPass", "mqttEnable"].forEach((id) => {
     const el = $(id);
     if (!el) return;
