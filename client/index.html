@@ -31,12 +31,15 @@
             <div class="val"><output id="power">--</output></div>
           </div>
           <div class="col control">
+                    <div class="row" style="justify-content:flex-end;gap:8px">
+          <button id="keyLock" class="icon-btn" title="Блокировка клавиш">🔒</button>
+          <button id="suspendBtn" class="icon-btn" title="Suspend / пробуждение">⌽</button>
+        </div>
             <div class="col">
               <div class="val"><output id="internalTemp" style="font-size: 1.8em;">--</output></div>
               <div class="val"><output id="mode" class="cv" style="font-size: 3em;">--</output></div>
             </div>
             <div class="row live-controls">
-              <button id="keyLock" class="btn btn-sm btn-warning" style="margin-left:auto">🔒</button>
               <button id="outBtn" class="btn btn-success">ВКЛ</button>
             </div>
           </div>
@@ -106,6 +109,9 @@
           <tr><td>Темп. внутр.</td><td class="energy-temp-in">--</td></tr>
           <tr><td>Темп. внешн.</td><td class="energy-temp-ex">--</td></tr>
         </table>
+        <div class="row">
+          <button id="energyResetBtn" class="btn btn-sm btn-ghost">Сбросить счётчики (Wh/Ah/время)</button>
+        </div>
       </section>
 
       <footer><span class="model"></span></footer>
@@ -159,7 +165,6 @@
           <tr><td>BCH заряд АКБ</td><td class="ctrl"><input id="cBch" type="checkbox"><input id="cBchThr" type="number" step="0.01" min="0" placeholder="порог V" style="width:80px"></td></tr>
           <tr><td>BTF откл. (0x2C)</td><td class="ctrl"><input id="cBtfEn" type="checkbox"><input id="cBtfCut" type="number" step="0.001" min="0" placeholder="ток A" style="width:80px"></td></tr>
           <tr><td>CLOF откл. выхода</td><td class="ctrl"><input id="cClof" type="checkbox"></td></tr>
-          <tr><td>Часовой пояс</td><td class="ctrl"><select id="cTz"></select></td></tr>
         </table>
         <div class="row">
           <button id="cfgCancelBtn" class="btn btn-ghost">Отменить</button>
@@ -191,6 +196,21 @@
           <input id="wifiNewSsid" type="text" placeholder="SSID">
           <input id="wifiNewPass" type="password" placeholder="Пароль">
           <button id="wifiAddBtn" class="btn btn-ghost" title="Добавить сеть">+</button>
+        </div>
+      </section>
+
+      <section class="card" id="wxCard">
+        <h2>Часы и погода</h2>
+        <table class="editable row">
+          <tr><td>Заставка (простой)</td><td class="ctrl"><select id="ssIdle"><option value="0">выкл</option><option value="1">только часы</option><option value="2">часы + погода</option></select></td></tr>
+          <tr><td>Заставка (suspend)</td><td class="ctrl"><select id="ssSuspend"><option value="0">выкл</option><option value="1">только часы</option><option value="2">часы + погода</option></select></td></tr>
+          <tr><td>Получать погоду</td><td class="ctrl"><input id="wxEnabled" type="checkbox"></td></tr>
+          <tr><td>Широта</td><td class="ctrl"><input id="wxLat" type="number" step="0.0001"></td></tr>
+          <tr><td>Долгота</td><td class="ctrl"><input id="wxLon" type="number" step="0.0001"></td></tr>
+          <tr><td>Часовой пояс</td><td class="ctrl"><select id="cTz"></select></td></tr>
+        </table>
+        <div class="row">
+          <button id="wxSaveBtn" class="btn btn-primary">Сохранить</button>
         </div>
       </section>
 

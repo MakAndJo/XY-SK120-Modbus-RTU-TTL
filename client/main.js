@@ -90,6 +90,10 @@ function scheduleReconnect() {
 // Send a device command ({action, ...}) over the WebSocket
 function send(obj) {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  if (suspended && obj && obj.action && !SUSPEND_SAFE.has(obj.action)) {
+    toast("Блок спит — доступно только «Разбудить»");
+    return;
+  }
   ws.send(JSON.stringify(obj));
 }
 
@@ -332,6 +336,20 @@ let lastConfig = {};
 let lastTzIndex = 0;
 // MQTT inputs are being edited; status push must not overwrite them
 let mqttDirty = false;
+// "Часы и погода" card inputs are being edited
+let wxDirty = false;
+// PSU is asleep (suspend): only wake is allowed.
+// 0x001E reads 0 when the block is awake; non-zero = sleeping.
+let suspended = false;
+// Current key-lock state (button shows a fixed 🔒 icon; fill reflects the state)
+let keyLocked = false;
+
+const SUSPEND_SAFE = new Set([
+  "getData", "getStatus", "getGraph", "resetGraph", "getTimeZone",
+  "getWifiStatus", "getMemoryGroup", "ping", "wakeUp",
+  "setScreensaver", "setWeather", "setTimeZone",
+  "addWifiNetwork", "restart", // ESP-side (stored on the ESP, not the PSU)
+]);
 
 function configInputsDirty() {
   configDirty = true;
@@ -436,6 +454,21 @@ function renderStatus(s) {
   const em = $("exitModeBtn");
   if (em) em.classList.toggle("hidden", !(s.mode === 2));
 
+  // Suspend state: dim everything except the suspend button
+  suspended = (s.suspend !== 0);
+  document.body.classList.toggle("suspended", suspended);
+  const sbtn = $("suspendBtn");
+  if (sbtn) sbtn.className = "icon-btn" + (suspended ? " warn" : "");
+
+  // Часы и погода card
+  if (!wxDirty) {
+    if (s.screensaverIdle != null) $("ssIdle").value = String(s.screensaverIdle);
+    if (s.screensaverSuspend != null) $("ssSuspend").value = String(s.screensaverSuspend);
+    if (s.weatherEnabled != null) $("wxEnabled").checked = !!s.weatherEnabled;
+    if (s.weatherLat != null && editable("wxLat")) $("wxLat").value = s.weatherLat;
+    if (s.weatherLon != null && editable("wxLon")) $("wxLon").value = s.weatherLon;
+  }
+
   if (!configDirty) {
     lastConfig = {
       backlight: s.backlight != null ? String(s.backlight) : "",
@@ -466,9 +499,10 @@ function renderStatus(s) {
   }
 
   const keyLockBtn = $("keyLock");
-  keyLockBtn.textContent = s.keyLockEnabled ? "🔒" : "🔓";
-  keyLockBtn.className = "btn btn-sm " + (s.keyLockEnabled ? "btn-warning" : "btn-ghost");
-  keyLockBtn.title = s.keyLockEnabled ? "Снять блокировку" : "Заблокировать";
+  keyLocked = !!s.keyLockEnabled;
+  keyLockBtn.textContent = keyLocked ? "🔒" : "🔓";
+  keyLockBtn.className = "icon-btn" + (keyLocked ? " on" : "");
+  keyLockBtn.title = keyLocked ? "Снять блокировку" : "Заблокировать";
 
   const cpMode = !!s.cpModeEnabled;
   $("pCol").classList.toggle("hidden", !cpMode);
@@ -603,9 +637,10 @@ function feedDeviceResponse(d) {
     case "setKeyLockResponse":
     case "keyLockResponse":
       if (d.locked != null) {
-        $("keyLock").textContent = d.locked ? "🔒" : "🔓";
-        $("keyLock").className = "btn btn-sm " + (d.locked ? "btn-warning" : "btn-ghost");
-        $("keyLock").title = d.locked ? "Снять блокировку" : "Заблокировать";
+        keyLocked = !!d.locked;
+        $("keyLock").textContent = keyLocked ? "🔒" : "🔓";
+        $("keyLock").className = "icon-btn" + (keyLocked ? " on" : "");
+        $("keyLock").title = keyLocked ? "Снять блокировку" : "Заблокировать";
       }
       break;
     case "connectWifiResponse":
@@ -618,14 +653,14 @@ function feedDeviceResponse(d) {
     case "memoryGroupData":
       if (d.success) {
         cacheMemGroup(d);
-        if (batchMemPending > 0) {
+        if (batchMemLoading) {
+          // Batch fill from loadAllMemGroups: cache only, no render/toast.
           batchMemPending--;
-          if (batchMemPending === 0) batchMemLoading = false;
+          if (batchMemPending <= 0) batchMemLoading = false;
+          return;
         }
-        if (!batchMemLoading) {
-          viewingGroup = Number(d.group);
-          renderMemoryGroup(d);
-        }
+        viewingGroup = Number(d.group);
+        renderMemoryGroup(d);
       } else toast("Не удалось прочитать профиль");
       break;
     case "saveMemoryGroupResponse":
@@ -647,6 +682,18 @@ function feedDeviceResponse(d) {
     case "resetGraphResponse":
       graphPoints = [];
       drawGraph();
+      break;
+    case "wakeUpResponse":
+      toast(d.success ? "Блок разбужен" : "Не удалось разбудить");
+      break;
+    case "setScreensaverResponse":
+      toast(d.success ? "Заставка обновлена" : "Ошибка заставки");
+      break;
+    case "setWeatherResponse":
+      toast("Настройки погоды сохранены");
+      break;
+    case "resetEnergyResponse":
+      toast(d.success ? "Счётчики сброшены" : "Сброс не удался (регистры read-only?)");
       break;
   }
   if (d.action && d.action.endsWith("Response") && d.success === false && d.error) {
@@ -715,7 +762,7 @@ function stepSetpoint(which, delta, decimals) {
 }
 
 function toggleKeyLock() {
-  send({ action: "setKeyLock", lock: !($("keyLock").textContent === "🔒") });
+  send({ action: "setKeyLock", lock: !keyLocked });
 }
 
 function loadWifiStatus() {
@@ -749,6 +796,23 @@ async function saveMqtt() {
   } else {
     toast(r.error || "Ошибка сохранения MQTT");
   }
+}
+
+function saveWx() {
+  const idle = parseInt($("ssIdle").value);
+  const susp = parseInt($("ssSuspend").value);
+  const enabled = $("wxEnabled").checked;
+  const lat = parseFloat($("wxLat").value);
+  const lon = parseFloat($("wxLon").value);
+  send({ action: "setScreensaver", state: "idle", type: idle });
+  send({ action: "setScreensaver", state: "suspend", type: susp });
+  send({ action: "setWeather", enabled, lat, lon });
+  if ($("cTz") && Number($("cTz").value) !== lastTzIndex) {
+    send({ action: "setTimeZone", index: parseInt($("cTz").value) });
+    lastTzIndex = Number($("cTz").value);
+  }
+  wxDirty = false;
+  toast("Настройки часов/погоды сохранены");
 }
 
 // Map table-row [data-action] buttons to their inputs and build the command
@@ -799,10 +863,6 @@ function saveConfig() {
   if ($("cBtfEn").checked !== c.btfEn) req.push({ action: "setBtfEnable", enabled: $("cBtfEn").checked });
   if ($("cBtfCut").value !== c.btfCut) req.push({ action: "setBtfCutoff", current: parseFloat($("cBtfCut").value) });
   if ($("cClof").checked !== c.clof) req.push({ action: "setClof", enabled: $("cClof").checked });
-  if ($("cTz") && Number($("cTz").value) !== lastTzIndex) {
-    req.push({ action: "setTimeZone", index: parseInt($("cTz").value) });
-    lastTzIndex = Number($("cTz").value);
-  }
 
   if (!req.length) { toast("Нет изменений"); return; }
   req.forEach(send);
@@ -832,6 +892,18 @@ function wireEvents() {
   $("wifiAddBtn").addEventListener("click", addNetwork);
   $("wifiRefresh").addEventListener("click", loadWifiStatus);
   $("mqttSaveBtn").addEventListener("click", saveMqtt);
+  $("suspendBtn").addEventListener("click", () => {
+    send({ action: suspended ? "wakeUp" : "suspendNow" });
+  });
+  $("energyResetBtn").addEventListener("click", () => {
+    if (confirm("Сбросить счётчики Wh/Ah/времени?")) send({ action: "resetEnergy" });
+  });
+  $("wxSaveBtn").addEventListener("click", saveWx);
+  ["ssIdle", "ssSuspend", "wxEnabled", "wxLat", "wxLon"].forEach((id) => {
+    const el = $(id);
+    if (!el) return;
+    el.addEventListener(el.type === "checkbox" ? "change" : "input", () => { wxDirty = true; });
+  });
   $("graphResetBtn").addEventListener("click", () => {
     send({ action: "resetGraph" });
   });

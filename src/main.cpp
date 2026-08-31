@@ -216,13 +216,12 @@ void loop() {
     checkWifiConfigMode();
   }
 
-  // Sync the PSU RTC/weather block (Unix time + weather, ~10s like the OEM
-  // XY-WFPOW module). This feeds the standby clock/weather screen. Skipped in
-  // AP mode — the 21-register write (~60ms of bus time) contends with the
-  // REG_MASTER keep-alive and makes the block drop the WiFi tab. A single
+  // Sync the PSU RTC/weather block (Unix time + weather, ~30s). This feeds the
+  // standby clock/weather screen. Skipped in AP mode — the 21-register write
+  // (~60ms of bus time) contends with the REG_MASTER keep-alive. A single
   // failed write is retried next cycle.
   static unsigned long lastRtcSync = 0;
-  if (localWifiMode() != 2 && millis() - lastRtcSync > 10000) {
+  if (localWifiMode() != 2 && millis() - lastRtcSync > 30000) {
     lastRtcSync = millis();
     syncRtcWeatherToPSU();
   }

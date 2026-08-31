@@ -6,6 +6,7 @@
 #include "wifi_interface/captive_portal.h"
 #include "mqtt/mqtt_manager.h"
 #include "graph_log.h"
+#include "rtc_weather.h"
 
 // Declared in main.cpp
 extern XY_SKxxx* powerSupply;
@@ -207,12 +208,13 @@ static bool readPSUStatusBatchedLocked(PSUStatusData& data) {
     data.baudRateCode = buf[3];
   }
 
-  // Batch 5: BEEPER(0x001C), EXTRACT_M(0x001D)
-  if (!powerSupply->readRegisters(REG_BEEPER, 2, buf)) {
+  // Batch 5: BEEPER(0x001C), EXTRACT_M(0x001D), SYS_STATUS(0x001E=suspend)
+  if (!powerSupply->readRegisters(REG_BEEPER, 3, buf)) {
     valid = false;
   } else {
     data.beeper = (buf[0] != 0);
     data.memoryGroup = buf[1] % 10;
+    data.suspend = buf[2];
   }
 
   // Batch 6: MPPT_ENABLE(0x001F), MPPT_THRESHOLD(0x0020), BTF(0x0021),
@@ -330,6 +332,7 @@ String buildStatusJSON(const PSUStatusData& data) {
   doc["wifiConfig"] = data.wifiConfig;
   doc["wifiStatus"] = data.wifiStatus;
   doc["ipv4"] = data.ipv4;
+  doc["suspend"] = data.suspend;
 
   doc["ohpHours"] = data.ohpHours;
   doc["ohpMinutes"] = data.ohpMinutes;
@@ -377,6 +380,13 @@ String buildStatusJSON(const PSUStatusData& data) {
   doc["model"] = data.model;
   doc["version"] = data.version;
   doc["keyLockEnabled"] = data.keyLocked;
+
+  // Clock / weather / screensaver config (for the panel + HASS).
+  doc["screensaverIdle"] = rtcScreensaverIdle();
+  doc["screensaverSuspend"] = rtcScreensaverSuspend();
+  doc["weatherEnabled"] = weatherFetchEnabled();
+  doc["weatherLat"] = weatherLat();
+  doc["weatherLon"] = weatherLon();
 
   String response;
   serializeJson(doc, response);
@@ -791,6 +801,60 @@ String handleMqttAction(const String& action, const char* payload) {
   if (action == "resetGraph") {
     graphLogReset();
     return "{\"action\":\"resetGraphResponse\",\"success\":true}";
+  }
+  if (action == "wakeUp") {
+    // 0x001E: writing 1 wakes the block from suspend.
+    bool ok = false;
+    if (powerSupply) {
+      lockModbus();
+      ok = powerSupply->writeRegister(REG_SYS_STATUS, 1);
+      unlockModbus();
+    }
+    return String("{\"action\":\"wakeUpResponse\",\"success\":") + (ok ? "true" : "false") + "}";
+  }
+  if (action == "suspendNow") {
+    // 0x001E: writing 0 puts the block to sleep.
+    bool ok = false;
+    if (powerSupply) {
+      lockModbus();
+      ok = powerSupply->writeRegister(REG_SYS_STATUS, 0);
+      unlockModbus();
+    }
+    return String("{\"action\":\"suspendNowResponse\",\"success\":") + (ok ? "true" : "false") + "}";
+  }
+  if (action == "setScreensaver") {
+    // state: "idle" | "suspend"; type: 0 off, 1 clock, 2+ clock+weather
+    String state = doc["state"] | "";
+    int type = doc["type"] | -1;
+    if (type < 0 || type > 2) {
+      return "{\"action\":\"setScreensaverResponse\",\"success\":false,\"error\":\"bad type\"}";
+    }
+    if (state == "suspend") {
+      rtcSetScreensaver(rtcScreensaverIdle(), (uint8_t)type);
+    } else {
+      rtcSetScreensaver((uint8_t)type, rtcScreensaverSuspend());
+    }
+    return "{\"action\":\"setScreensaverResponse\",\"success\":true}";
+  }
+  if (action == "setWeather") {
+    bool enabled = doc["enabled"] | weatherFetchEnabled();
+    // Only override the fields that were actually provided.
+    double lat = doc.containsKey("lat") ? (double)doc["lat"] : weatherLat();
+    double lon = doc.containsKey("lon") ? (double)doc["lon"] : weatherLon();
+    rtcSetWeather(enabled, lat, lon);
+    return "{\"action\":\"setWeatherResponse\",\"success\":true}";
+  }
+  if (action == "resetEnergy") {
+    // Try clearing the accumulated counters by writing zeros to 0x0006-0x000C.
+    // (Best-effort: some units keep these read-only and reply with an exception.)
+    bool ok = false;
+    if (powerSupply) {
+      uint16_t zeros[7] = {0};
+      lockModbus();
+      ok = powerSupply->writeRegisters(REG_AH_LOW, 7, zeros);
+      unlockModbus();
+    }
+    return String("{\"action\":\"resetEnergyResponse\",\"success\":") + (ok ? "true" : "false") + "}";
   }
   if (action == "setMqttConfig") {
     String host = doc["host"] | "";

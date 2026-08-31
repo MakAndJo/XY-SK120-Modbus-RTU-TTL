@@ -56,6 +56,7 @@ struct PSUStatusData {
   uint16_t wifiConfig;
   uint16_t wifiStatus;
   uint32_t ipv4;
+  uint16_t suspend; // 0x001E: 0=sleep/suspend, 1=standby/idle
 
   uint16_t ohpHours, ohpMinutes;
   double overAmpHours;

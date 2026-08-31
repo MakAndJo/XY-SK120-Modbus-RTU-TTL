@@ -37,7 +37,10 @@ body {
 .col.control {
   flex: 0;
   text-align: end;
+  align-items: end;
   min-height: 100%;
+  min-width: fit-content;
+  white-space: nowrap;
 }
 
 main {
@@ -321,6 +324,45 @@ footer { padding: 12px; text-align: center; color: var(--muted); font-size: 0.8r
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 8px;
+}
+/* Icon toggle buttons (suspend, lock): fixed icon, state shown by fill */
+.icon-btn {
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 1.25rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.icon-btn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.icon-btn.warn { background: #f44336; border-color: #f44336; color: #fff; }
+
+/* Block asleep: dim PSU-side controls. ESP-side cards (clock/weather, WiFi,
+   MQTT — stored on the ESP) stay editable. */
+body.suspended .card:not(#wxCard):not(#wifiCard):not(#mqttCard) input,
+body.suspended .card:not(#wxCard):not(#wifiCard):not(#mqttCard) select,
+body.suspended .card:not(#wxCard):not(#wifiCard):not(#mqttCard) button,
+body.suspended .card:not(#wxCard):not(#wifiCard):not(#mqttCard) label,
+body.suspended .card:not(#wxCard):not(#wifiCard):not(#mqttCard) output,
+body.suspended .card:not(#wxCard):not(#wifiCard):not(#mqttCard) canvas,
+body.suspended .card:not(#wxCard):not(#wifiCard):not(#mqttCard) table,
+body.suspended .card:not(#wxCard):not(#wifiCard):not(#mqttCard) span
+{
+  opacity: 0.45;
+  pointer-events: none;
+}
+body.suspended #suspendBtn {
+  opacity: 1 !important;
+  pointer-events: auto !important;
 }
 #graphLegend {
   min-height: 1.2em;

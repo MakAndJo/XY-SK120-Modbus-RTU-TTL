@@ -223,6 +223,40 @@ static void discNumber(const String& key, const String& name,
   pubDisc("number", key, doc);
 }
 
+static void discSelect(const String& key, const String& name,
+                       const String& statusTopic, const String& commandTopic,
+                       const char* stateTmpl, const char* cmdTmpl, const char* options) {
+  DynamicJsonDocument doc(512);
+  doc["name"] = name;
+  doc["unique_id"] = "xysk_" + mqttDeviceId() + "_" + key;
+  doc["state_topic"] = statusTopic;
+  doc["value_template"] = stateTmpl;
+  doc["command_topic"] = commandTopic;
+  doc["command_template"] = cmdTmpl;
+  JsonArray opts = doc.createNestedArray("options");
+  String s = options;
+  int start = 0;
+  for (;;) {
+    int c = s.indexOf(',', start);
+    if (c < 0) { opts.add(s.substring(start)); break; }
+    opts.add(s.substring(start, c));
+    start = c + 1;
+  }
+  addDiscDevice(doc);
+  pubDisc("select", key, doc);
+}
+
+static void discButton(const String& key, const String& name,
+                       const String& commandTopic, const char* pressCmd) {
+  DynamicJsonDocument doc(256);
+  doc["name"] = name;
+  doc["unique_id"] = "xysk_" + mqttDeviceId() + "_" + key;
+  doc["command_topic"] = commandTopic;
+  doc["payload_press"] = pressCmd;
+  addDiscDevice(doc);
+  pubDisc("button", key, doc);
+}
+
 static void publishDiscovery() {
   String devId = mqttDeviceId();
   String statusTopic = String("xysk/") + devId + "/status";
@@ -264,6 +298,40 @@ static void publishDiscovery() {
              "{{ value_json.powerSet }}",
              "{\"action\":\"setPower\",\"power\":{{ value }}}",
              0, 150, 0.1, "W");
+
+  // Backlight (screen brightness)
+  discNumber("backlight", "PSU Backlight", statusTopic, commandTopic,
+             "{{ value_json.backlight }}",
+             "{\"action\":\"setBacklight\",\"level\":{{ value }}}",
+             1, 5, 1, "");
+
+  // Screensaver type per PSU state (0 off, 1 clock, 2+ clock+weather)
+  discSelect("ss_idle", "PSU Screensaver Idle", statusTopic, commandTopic,
+             "{{ value_json.screensaverIdle }}",
+             "{\"action\":\"setScreensaver\",\"state\":\"idle\",\"type\":{{ value }}}",
+             "0,1,2");
+  discSelect("ss_suspend", "PSU Screensaver Suspend", statusTopic, commandTopic,
+             "{{ value_json.screensaverSuspend }}",
+             "{\"action\":\"setScreensaver\",\"state\":\"suspend\",\"type\":{{ value }}}",
+             "0,1,2");
+
+  // Weather fetch on/off + coordinates
+  discSwitch("weather", "PSU Weather", statusTopic, commandTopic,
+             "{{ 'ON' if value_json.weatherEnabled else 'OFF' }}",
+             "{\"action\":\"setWeather\",\"enabled\":true}",
+             "{\"action\":\"setWeather\",\"enabled\":false}");
+  discNumber("lat", "PSU Latitude", statusTopic, commandTopic,
+             "{{ value_json.weatherLat }}",
+             "{\"action\":\"setWeather\",\"lat\":{{ value }}}",
+             -90, 90, 0.0001, "");
+  discNumber("lon", "PSU Longitude", statusTopic, commandTopic,
+             "{{ value_json.weatherLon }}",
+             "{\"action\":\"setWeather\",\"lon\":{{ value }}}",
+             -180, 180, 0.0001, "");
+
+  // Actions
+  discButton("wake", "PSU Wake", commandTopic, "{\"action\":\"wakeUp\"}");
+  discButton("reset_energy", "PSU Reset Energy", commandTopic, "{\"action\":\"resetEnergy\"}");
 
   Serial.println("[MQTT] Discovery configs published");
 }
